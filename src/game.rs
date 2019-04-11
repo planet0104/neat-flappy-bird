@@ -94,7 +94,7 @@ impl Default for Pipe{
     }
 }
 
-pub struct Game{
+pub struct Game<'a>{
     pipes: Vec<Pipe>,
 	birds: Vec<Bird>,
 	score: i32,
@@ -102,7 +102,7 @@ pub struct Game{
 	height: f64,
 	spawn_interval: i32,
 	interval: i32,
-	ga: GA,
+	ga: GA<'a>,
 	alives: usize,
 	generation: i32,
 	background_speed: f64,
@@ -110,7 +110,7 @@ pub struct Game{
 	max_score: i32,
     handle: Option<Handle<()>>,
 }
-impl Default for Game{
+impl <'a> Default for Game<'a>{
     fn default() -> Self{
         Game{
             pipes: vec![],
@@ -131,7 +131,7 @@ impl Default for Game{
     }
 }
 
-impl Game{
+impl <'a> Game<'a>{
     pub fn start(&mut self){
         self.interval = 0;
         self.score = 0;
@@ -181,7 +181,7 @@ impl Game{
                 
                 //网络处理
                 let phenotype = self.ga.get_phenotype(i).unwrap();
-                let output = phenotype.borrow_mut().update(&inputs, RunType::Active);
+                let output = phenotype.update(&inputs, RunType::Active);
                 if output[0] > 0.5{
                     self.birds[i].flap();
                 }

@@ -4,12 +4,10 @@ use super::genes::*;
 use super::phenotype::*;
 use super::utils::*;
 use super::innovation::*;
-use std::rc::Rc;
-use std::cell::RefCell;
 
 ///基因组
 #[derive(Clone)]
-pub struct Genome {
+pub struct Genome<'a> {
     //它的标识
     genome_id: i32,
     //组成此基因组所有的神经细胞
@@ -17,7 +15,7 @@ pub struct Genome {
     //所有的链接
     links: Vec<LinkGene>,
     //指向它的表现型指针
-    phenotype: Option<Rc<RefCell<NeuralNet>>>,
+    phenotype: Option<NeuralNet<'a>>,
     //它的原始适应性分数
     fitness: f64,
     //它的适应分成绩被放入物种后进行调整
@@ -31,27 +29,27 @@ pub struct Genome {
     species: i32,
 }
 use std::cmp::Ordering;
-impl Ord for Genome {
+impl <'a> Ord for Genome<'a> {
     fn cmp(&self, other: &Genome) -> Ordering {
         self.fitness.partial_cmp(&other.fitness).unwrap()
     }
 }
 
 //比较运算符重载
-impl PartialOrd for Genome {
+impl <'a> PartialOrd for Genome<'a> {
     fn partial_cmp(&self, other: &Genome) -> Option<Ordering> {
         self.fitness.partial_cmp(&other.fitness)
     }
 }
 //等于运算符重载
-impl PartialEq for Genome {
+impl <'a> PartialEq for Genome<'a> {
     fn eq(&self, other: &Genome) -> bool {
         self.fitness == other.fitness
     }
 }
-impl Eq for Genome {}
+impl <'a> Eq for Genome<'a> {}
 
-impl Genome{
+impl <'a> Genome<'a>{
 
     //这个构造函数从LinkGenes的Vec创建一个基因组，一个NeuronGenes的载体和一个ID号
     pub fn from_data(
@@ -60,7 +58,7 @@ impl Genome{
         genes: Vec<LinkGene>,
         inputs: usize,
         outputs: usize,
-    ) -> Genome {
+    ) -> Genome<'a> {
         Genome {
             genome_id: id,
             neurons: neurons,
@@ -76,7 +74,7 @@ impl Genome{
     }
 
     //这个构造函数创建一个最小的基因组，其中有输出+输入神经元，每个输入神经元连接到每个输出神经元。
-    pub fn new(id: i32, inputs: usize, outputs: usize) -> Genome {
+    pub fn new(id: i32, inputs: usize, outputs: usize) -> Genome<'a> {
         
         let mut neurons:Vec<NeuronGene> = vec![];
 
@@ -157,28 +155,28 @@ impl Genome{
         self.delete_phenotype();
 
         //用于保存表现型所要求的所有神经细胞
-        let mut neurons: Vec<Rc<RefCell<Neuron>>> = vec![];
+        let mut neurons: Vec<Neuron> = vec![];
         //创建所有要求的神经细胞
         //这里有可能neurons是反向的，即input在最后，这种情况要反过来创建，确保Input类型的基因在前边
         if self.neurons[0].neuron_type == NeuronType::Input {
             for n in &self.neurons {
-                neurons.push(Rc::new(RefCell::new(Neuron::new(
+                neurons.push(Neuron::new(
                     n.neuron_type,
                     n.id,
                     n.split_y as f64,
                     n.split_x as f64,
                     n.activation_response,
-                ))));
+                ));
             }
         } else {
             for n in 0..self.neurons.len() {
-                neurons.push(Rc::new(RefCell::new(Neuron::new(
+                neurons.push(Neuron::new(
                     self.neurons[self.neurons.len() - 1 - n].neuron_type,
                     self.neurons[self.neurons.len() - 1 - n].id,
                     self.neurons[self.neurons.len() - 1 - n].split_y as f64,
                     self.neurons[self.neurons.len() - 1 - n].split_x as f64,
                     self.neurons[self.neurons.len() - 1 - n].activation_response,
-                ))));
+                ));
             }
         }
 
@@ -191,20 +189,20 @@ impl Genome{
                 let to_neuron_pos = self.get_element_pos(lnk.to_neuron).unwrap();
 
                 //在这两个神经细胞之间创建一个链接，并为存入的基因分配权重
-                let link = Link::new(lnk.weight, neurons[from_neuron_pos].clone(), neurons[to_neuron_pos].clone(), lnk.recurrent);
+                let link = Link::new(lnk.weight, &neurons[from_neuron_pos], &neurons[to_neuron_pos], lnk.recurrent);
 
                 //把新的链接加入到神经细胞
-                neurons[from_neuron_pos].borrow_mut().links_out().push(link.clone());
-                neurons[to_neuron_pos].borrow_mut().links_in().push(link);
+                neurons[from_neuron_pos].links_out().push(link.clone());
+                neurons[to_neuron_pos].links_in().push(link);
             }
         }
 
         //每个神经细胞都已经包含了所有的链接信息，然后利用他们创建一个神经网络
-        self.phenotype = Some(Rc::new(RefCell::new(NeuralNet::new(neurons, depth))));
+        self.phenotype = Some(NeuralNet::new(neurons, depth));
     }
 
-    pub fn phenotype(&mut self) -> Option<Rc<RefCell<NeuralNet>>> {
-        self.phenotype.clone()
+    pub fn phenotype(&mut self) -> Option<&NeuralNet> {
+        self.phenotype.as_ref()
     }
 
     //删除神经网络
@@ -511,7 +509,7 @@ impl Genome{
     }
 
     //计算基本基因组和其他基因组之间的兼容性分
-    pub fn get_compatibility_score(&self, genome: &Genome) -> f64 {
+    pub fn get_compatibility_score(&self, genome: &'a Genome<'a>) -> f64 {
         //通过逐步减少每个基因组的长度来计算脱落基因、过量基因和匹配基因的数目
         let mut num_disjoint = 0.0;
         let mut num_excess = 0.0;

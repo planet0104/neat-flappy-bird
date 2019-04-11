@@ -1,14 +1,10 @@
-
-use std::rc::Rc;
-use std::cell::RefCell;
-
 use super::genes::*;
 
 #[derive(Clone)]
-pub struct Link {
+pub struct Link<'a> {
     //指向与本link相连接的两个神经细胞的指针
-    _in: Rc<RefCell<Neuron>>,
-    out: Rc<RefCell<Neuron>>,
+    _in: &'a Neuron<'a>,
+    out: &'a Neuron<'a>,
 
     //连接权重
     weight: f64,
@@ -17,8 +13,8 @@ pub struct Link {
     recurrent: bool,
 }
 
-impl Link {
-    pub fn new(w: f64, _in: Rc<RefCell<Neuron>>, out: Rc<RefCell<Neuron>>, rec: bool) -> Link {
+impl <'a> Link<'a> {
+    pub fn new(w: f64, _in: &'a Neuron, out: &'a Neuron, rec: bool) -> Link<'a> {
         Link {
             weight: w,
             _in: _in,
@@ -28,12 +24,13 @@ impl Link {
     }
 }
 
-pub struct Neuron {
+#[derive(Clone)]
+pub struct Neuron<'a> {
     //所有链接进入这个神经元
-    links_in: Vec<Link>,
+    links_in: Vec<Link<'a>>,
 
     //和输出的链接
-    links_out: Vec<Link>,
+    links_out: Vec<Link<'a>>,
 
     //权重x输入的和
     sum_activation: f64,
@@ -57,8 +54,8 @@ pub struct Neuron {
     split_x: f64,
 }
 
-impl Neuron {
-    pub fn new(tp: NeuronType, id: i32, y: f64, x: f64, act_response: f64) -> Neuron {
+impl <'a> Neuron<'a> {
+    pub fn new(tp: NeuronType, id: i32, y: f64, x: f64, act_response: f64) -> Neuron <'a>{
         Neuron {
             neuron_type: tp,
             neuron_id: id,
@@ -74,17 +71,18 @@ impl Neuron {
         }
     }
 
-    pub fn links_out(&mut self) -> &mut Vec<Link> {
+    pub fn links_out(&mut self) -> &mut Vec<Link<'a>> {
         &mut self.links_out
     }
 
-    pub fn links_in(&mut self) -> &mut Vec<Link> {
+    pub fn links_in(&mut self) -> &mut Vec<Link<'a>> {
         &mut self.links_in
     }
 }
 
-pub struct NeuralNet {
-    neurons: Vec<Rc<RefCell<Neuron>>>,
+#[derive(Clone)]
+pub struct NeuralNet<'a> {
+    neurons: Vec<Neuron<'a>>,
     //网络深度
     depth: i32,
 }
@@ -104,14 +102,14 @@ fn sigmoid(netinput: f64, response: f64) -> f64 {
     1.0 / (1.0 + (-netinput / response).exp())
 }
 
-impl NeuralNet {
-    pub fn empty() -> NeuralNet {
+impl <'a> NeuralNet<'a> {
+    pub fn empty() -> NeuralNet<'a> {
         NeuralNet {
             neurons: vec![],
             depth: 0,
         }
     }
-    pub fn new(neurons: Vec<Rc<RefCell<Neuron>>>, depth: i32) -> NeuralNet {
+    pub fn new(neurons: Vec<Neuron<'a>>, depth: i32) -> NeuralNet<'a> {
         NeuralNet {
             neurons: neurons,
             depth: depth,
@@ -138,25 +136,25 @@ impl NeuralNet {
             //这是当前神经细胞的一个下标
             let mut neuron = 0;
             //首先将'input'神经元的输出设置为等于传入函数的值
-            while self.neurons[neuron].borrow().neuron_type == NeuronType::Input {
-                self.neurons[neuron].borrow_mut().output = inputs[neuron];
+            while self.neurons[neuron].neuron_type == NeuronType::Input {
+                self.neurons[neuron].output = inputs[neuron];
                 neuron += 1;
             }
             //将偏移的输出设置为1
-            self.neurons[neuron].borrow_mut().output = 1.0;
+            self.neurons[neuron].output = 1.0;
             neuron += 1;
 
             //然后用每次改变一个神经细胞的办法来遍历整个网络
             while neuron < self.neurons.len() {
                 //这个sum用来保存所有输入x权重的总和
                 let mut sum = 0.0;
-                let mut ne = self.neurons[neuron].borrow_mut();
+                let mut ne = self.neurons[neuron];
                 //通过对进入该神经细胞的所有连接的循环，将该神经细胞各输入值加在一起
                 for lnk in &ne.links_in {
                     //得到lnk连接的权重
                     let weight = lnk.weight;
                     //从该链接的进入端神经细胞得到输出
-                    let neuron_output = lnk._in.borrow().output;
+                    let neuron_output = lnk._in.output;
                     //将次输出加入总和sum中
                     sum += weight * neuron_output;
                 }
@@ -176,7 +174,7 @@ impl NeuralNet {
           //如果执行了这种类型的更新,网络输出需要进行复位(reset)，否则由它建立的网络可能会和训练数据的输入顺序有关
         if run_type == RunType::Snapshot {
             for n in &mut self.neurons {
-                n.borrow_mut().output = 0.0;
+                n.output = 0.0;
             }
         }
         //返回输出

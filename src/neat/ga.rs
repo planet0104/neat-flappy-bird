@@ -5,16 +5,13 @@ use super::params;
 use super::phenotype::NeuralNet;
 use super::species::Species;
 use super::utils::{random_float, random_int, random_usize};
-use std::rc::Rc;
-use std::cell::RefCell;
-// use crate::win::ui;
 
 // Desc：用于实现的进化算法类
-pub struct GA {
-    genomes: Vec<Rc<RefCell<Genome>>>,
+pub struct GA<'a> {
+    genomes: Vec<Genome<'a>>,
     //保留最后一代最佳基因组的记录。 （用于在用户按下“B”键时将显示效果最佳）
-    best_genomes: Vec<Genome>,
-    species: Vec<Species>,
+    best_genomes: Vec<Genome<'a>>,
+    species: Vec<Species<'a>>,
     innovation: Innovations,
     generation: i32,
     next_genome_id: i32,
@@ -49,14 +46,14 @@ impl SplitDepth {
     }
 }
 
-impl GA {
+impl <'a> GA<'a> {
     //这个构造函数从提供的值创建基本基因组，并创建一个“大小”类似（相同拓扑，不同权重）基因组的群体
-    pub fn new(size: i32, inputs: usize, outputs: usize) -> GA {
+    pub fn new(size: i32, inputs: usize, outputs: usize) -> GA<'a> {
         //创建基因组群体
         let mut next_genome_id = 0;
-        let mut genomes: Vec<Rc<RefCell<Genome>>> = vec![];
+        let mut genomes: Vec<Genome> = vec![];
         for _ in 0..size {
-            genomes.push(Rc::new(RefCell::new(Genome::new(next_genome_id, inputs, outputs))));
+            genomes.push(Genome::new(next_genome_id, inputs, outputs));
             next_genome_id += 1;
         }
         //创建创新列表。 首先创建一个最小的基因组
@@ -100,7 +97,7 @@ impl GA {
         self.reset_and_kill();
         //用上一次运行获得的适应性分数来更新基因组
         for gen in 0..self.genomes.len() {
-            self.genomes[gen].borrow_mut().set_fitness(self.fitness_scores[gen]);
+            self.genomes[gen].set_fitness(self.fitness_scores[gen]);
         }
         //计算平均分
         let mut total_score = 0.0;
@@ -114,41 +111,41 @@ impl GA {
         self.speciate_and_calculate_spawn_levels();
 
         //这将用来保存基因组的新群体
-        let mut new_pop: Vec<Genome> = vec![];
+        let mut new_pop: Vec<Genome<'a>> = vec![];
         //从每一个物种产生子代。待孵化的自带数目是一个双精度实数，需要将它转换成为一个整数
         let mut num_spawned_so_far = 0;
         //通过对每个物种的循环，选择要配对杂交和突变的子代
         let mut baby = None;
-        for spc in 0..self.species.len() {
+        for spc in &self.species{
             //从每个物种得到的孵化总数是一个浮点数，需要四舍五入化为整数
             //而这有可能导致孵化总数的溢出。本语句确保不会出现这种情况
             if num_spawned_so_far < self.pop_size {
                 //这是该物种要求孵化下一代的个体总数,round()把浮点数改大或改小化成整数
-                let mut num_to_spawn = self.species[spc].num_to_spawn().round() as i32;
+                let mut num_to_spawn = spc.num_to_spawn().round() as i32;
                 let mut chosen_bestyet = false;
                 while num_to_spawn > 0 {
                     num_to_spawn -= 1;
                     //首先从该物种找出表现最好的基因组，并将它不做任何变异地转移到新的群体
                     //从而为每个物种提供了精英
                     if !chosen_bestyet {
-                        baby = Some(self.species[spc].leader().clone());
+                        baby = Some(spc.leader().clone());
                         chosen_bestyet = true;
                     } else {
                         //如果本物种仅包含一个个体，则只能执行突变操作
-                        if self.species[spc].num_members() == 1 {
+                        if spc.num_members() == 1 {
                             //孵化一个后代
-                            baby = Some(self.species[spc].spawn());
+                            baby = Some(spc.spawn());
                         } else {
                             //如果大于1，则可以使用杂交操作
                             //孵化1
-                            let g1 = self.species[spc].spawn();
+                            let g1 = spc.spawn();
                             if random_float() < params::CROSSOVER_RATE {
                                 //孵化2, 保证它不是g1
-                                let mut g2 = self.species[spc].spawn();
+                                let mut g2 = spc.spawn();
                                 let mut num_attempts = 5;
                                 while g1.id() == g2.id() && num_attempts > 0 {
                                     num_attempts -= 1;
-                                    g2 = self.species[spc].spawn();
+                                    g2 = spc.spawn();
                                 }
                                 if g1.id() != g2.id() {
                                     baby = Some(self.crossover(&g1, &g2));
@@ -156,7 +153,7 @@ impl GA {
                                     baby = Some(g1);
                                 }
                             }else{
-                                baby = Some(self.species[spc].spawn());
+                                baby = Some(spc.spawn());
                             }
                         }
 
@@ -218,12 +215,12 @@ impl GA {
         }
 
         //用新群体替代当前群体
-        self.genomes = new_pop.drain(..).map(|a| Rc::new(RefCell::new(a))).collect();
+        self.genomes = new_pop.drain(..).map(|a| a).collect();
         //创建新的表现型
         for gen in 0..self.genomes.len() {
             //计算最大网络深度
-            let depth = self.calculate_net_depth(&*(self.genomes[gen].borrow()));
-            self.genomes[gen].borrow_mut().create_phenotype(depth);
+            let depth = self.calculate_net_depth(&self.genomes[gen]);
+            self.genomes[gen].create_phenotype(depth);
         }
         //增加代数计数器
         self.generation += 1;
@@ -233,13 +230,13 @@ impl GA {
     fn create_phenotypes(&mut self) {
         for i in 0..self.pop_size as usize {
             //计算最大网络深度
-            let depth = self.calculate_net_depth(&*(self.genomes[i].borrow()));
-            self.genomes[i].borrow_mut().create_phenotype(depth);
+            let depth = self.calculate_net_depth(&self.genomes[i]);
+            self.genomes[i].create_phenotype(depth);
         }
     }
 
-    pub fn get_phenotype(&mut self, index: usize) -> Option<Rc<RefCell<NeuralNet>>> {
-        self.genomes[index].borrow_mut().phenotype()
+    pub fn get_phenotype(&mut self, index: usize) -> Option<&NeuralNet> {
+        self.genomes[index].phenotype()
     }
 
     pub fn fitness_scores(&mut self) -> &mut Vec<f64> {
@@ -248,13 +245,13 @@ impl GA {
 
     //这个函数简单地遍历每个物种，并调用每个物种的AdjustFitness
     fn adjust_species_fitnesses(&mut self) {
-        for sp in &mut self.species {
-            sp.adjust_fitnesses();
+        for i in 0..self.species.len() {
+            Species::adjust_fitnesses(&mut self, i);
         }
     }
 
     //在查找表中搜索基因组中每个节点的dSplitY值，并根据该图返回网络的深度
-    fn calculate_net_depth(&self, gen: &Genome) -> i32 {
+    fn calculate_net_depth(&self, gen: &'a Genome<'a>) -> i32 {
         let mut max_so_far = 0;
         // let gen = gen.borrow();
         for nd in 0..gen.num_neurons() {
@@ -268,22 +265,22 @@ impl GA {
     }
 
     /** 锦标赛选择 */
-    fn tournament_selection(&self, num_comparisons: i32) -> Genome {
+    fn tournament_selection(&self, num_comparisons: i32) -> Genome<'a> {
         let mut best_fitness_so_far = 0.0;
         let mut chosen_one = 0;
         //从人群中选择 num_comparisons 成员进行随机测试，达到目前为止最好的发现
         for _ in 0..num_comparisons {
             let this_try = random_usize(0, self.genomes.len() - 1);
-            if self.genomes[this_try].borrow().fitness() > best_fitness_so_far {
+            if self.genomes[this_try].fitness() > best_fitness_so_far {
                 chosen_one = this_try;
-                best_fitness_so_far = self.genomes[this_try].borrow().fitness();
+                best_fitness_so_far = self.genomes[this_try].fitness();
             }
         }
         //返回冠军
-        self.genomes[chosen_one].borrow().clone()
+        self.genomes[chosen_one].clone()
     }
 
-    pub fn crossover(&mut self, mum: &Genome, dad: &Genome) -> Genome {
+    pub fn crossover(&mut self, mum: &'a Genome<'a>, dad: &'a Genome<'a>) -> Genome<'a> {
         //首先计算用来产生disjoint/excess基因的基因组。这是适应性最好的基因组。
         //如果他们有相同的适应分，则选用较短者(因为希望网络保持尽可能小)
         let best = if mum.fitness() == dad.fitness() {
@@ -428,7 +425,7 @@ impl GA {
         //println!("reset_and_kill>self.species.len()>>02>>{}", self.species.len());
         //我们也可以删除表型
         for gen in &mut self.genomes {
-            gen.borrow_mut().delete_phenotype();
+            gen.delete_phenotype();
         }
     }
 
@@ -438,8 +435,8 @@ impl GA {
         //self.genomes.sort();
         self.genomes.sort_by(|a, b| b.cmp(a)); //从大到小排序
                                                //是这一代最好的基因组吗？
-        if self.genomes[0].borrow().fitness() > self.best_ever_fitness {
-            self.best_ever_fitness = self.genomes[0].borrow().fitness();
+        if self.genomes[0].fitness() > self.best_ever_fitness {
+            self.best_ever_fitness = self.genomes[0].fitness();
         }
         //保存最好的基因组的记录
         self.store_best_genomes();
@@ -450,7 +447,7 @@ impl GA {
         //删除旧的记录
         self.best_genomes.clear();
         for gen in 0..params::NUM_BEST_SPRITE {
-            self.best_genomes.push(self.genomes[gen].borrow().clone());
+            self.best_genomes.push(self.genomes[gen].clone());
         }
     }
 
@@ -477,7 +474,7 @@ impl GA {
             let mut spc_selected = -1;
             for spc in 0..self.species.len() {
                 let campatibility =
-                    self.genomes[gen].borrow().get_compatibility_score(self.species[spc].leader());
+                    self.genomes[gen].get_compatibility_score(self.species[spc].leader());
                 //如果这个体类似于这个物种添加到物种
                 if campatibility <= params::COMPATIBILITY_THRESHOLD {
                     spc_selected = spc as i32;
@@ -485,12 +482,12 @@ impl GA {
                 }
             }
             if spc_selected != -1 {
-                self.species[spc_selected as usize].add_member(self.genomes[gen].clone());
-                self.genomes[gen].borrow_mut().set_species(self.species[spc_selected as usize].id());
+                // self.species[spc_selected as usize].add_member(&self.genomes[gen]);
+                self.genomes[gen].set_species(self.species[spc_selected as usize].id());
             } else {
                 //我们没有找到兼容的物种，所以让我们创建一个新的物种
-                self.species
-                    .push(Species::new(self.genomes[gen].clone(), self.next_species_id));
+                // self.species
+                //     .push(Species::new(&self.genomes[gen], self.next_species_id));
                 self.next_species_id += 1;
             }
         }
@@ -501,14 +498,14 @@ impl GA {
 
         //计算人口的新调整总和平均适应度
         for gen in &self.genomes {
-            self.tot_fit_adj += gen.borrow().get_adj_fitness();
+            self.tot_fit_adj += gen.get_adj_fitness();
         }
         self.av_fit_adj = self.tot_fit_adj / self.genomes.len() as f64;
 
         //计算每个成员人数应该产生多少个后代
         for gen in &mut self.genomes {
-            let to_spawn = gen.borrow().get_adj_fitness() / self.av_fit_adj;
-            gen.borrow_mut().set_amount_to_spawn(to_spawn);
+            let to_spawn = gen.get_adj_fitness() / self.av_fit_adj;
+            gen.set_amount_to_spawn(to_spawn);
         }
 
         //迭代所有的物种，并计算每个物种应该产生多少个后代
@@ -535,6 +532,15 @@ impl GA {
         self.genomes.len() as i32
     }
 
+    pub fn get_by_id(&mut self, id:i32) ->Option<&mut Genome<'a>>{
+        for i in 0..self.genomes.len(){
+            if self.genomes[i].id() == id{
+                return Some(&mut self.genomes[i]);
+            }
+        }
+        None
+    }
+
     pub fn num_best_genomes(&self) -> i32 {
         self.best_genomes.len() as i32
     }
@@ -549,6 +555,10 @@ impl GA {
 
     pub fn size(&self) -> usize{
         self.pop_size as usize
+    }
+
+    pub fn species(&mut self) ->&mut Vec<Species<'a>>{
+        &mut self.species
     }
 
     // pub fn render_species_info(
