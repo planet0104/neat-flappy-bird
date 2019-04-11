@@ -1,0 +1,13 @@
+[package]
+name = "neat-flappy-bird"
+version = "1.0.0"
+authors = ["planet0104 <planet0104@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+web-view = "0.4.0"
+rustneat = "0.2.1"
+serde_json = "1.0.39"
+base64 = "0.10.1"
+handlebars = "1.1.0"
+rand = "0.6.5"

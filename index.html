@@ -1,0 +1,88 @@
+﻿<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>NEAT Flappy Bird</title>
+    <style>
+      body{margin: 0; padding: 0; overflow: hidden; font-size: 0px; }
+      #root{ font-size: 16px; }
+      /* .canvas{
+        width: 100%;
+        height: 100%;
+      } */
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/vanilla-lazyload@11.0.6/dist/lazyload.min.js"></script>
+  </head>
+<body>
+  <div style="display:none">
+    {{#each images~}}
+        <img id="{{id}}" data-src="{{src}}" />
+    {{/each~}}
+  </div>
+  <div id="root">
+    <canvas id="canvas" width="{{game_width}}" height="{{game_height}}" class="canvas"></canvas>
+  </div>
+<script type="text/javascript">
+  
+  console.log("启动");
+  var c=document.getElementById("canvas");
+  var ctx=c.getContext("2d");
+  window.ctx = ctx;
+
+  window.images = new Map();
+  var ll = new LazyLoad({
+      callback_loaded: function(a){
+        window.images.set(a.id, a);
+      },
+      callback_finish: function(a){
+        invoke("onload");
+        // ctx.drawImage(images.get("img-background"), 0, 0);
+        // ctx.drawImage(images.get("img-bird"), 0, 0);
+        // ctx.drawImage(images.get("img-pipebottom"), 100, 0);
+        // ctx.drawImage(images.get("img-pipetop"), 200, 0);
+      }
+  });
+  ll.loadAll();
+
+  var start = false;
+  function next(timestamp) {
+    invoke("animation-frame", timestamp);
+    if(start){
+      window.requestAnimationFrame(next);
+    }
+  }
+  function startAnimationFrame(){
+    if(start){
+      return;
+    }
+    console.log("startAnimationFrame");
+    start = true;
+    window.requestAnimationFrame(next);
+  }
+  function stopAnimationFrame(){
+    start = false;
+  }
+  
+  // $('btn-restart').addEventListener("click", function(e) {
+  //   invoke("restart");
+  //   $('game-over').style.display = "none";
+  // });
+
+  //--------------------------- util -----------------------------
+  function invoke(cmd, info){
+    external.invoke(JSON.stringify({
+      cmd: cmd,
+      info: info
+    }));
+  }
+
+  console.log = function(msg){
+    invoke("log", msg);
+  };
+
+  function $(id){
+    return document.getElementById(id);
+  }
+  //---------------------------------------------------------------
+</script>
+</body>
+</html>
