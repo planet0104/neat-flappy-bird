@@ -1,10 +1,13 @@
-use super::genes::*;
+// Desc：创建神经网络所需的定义。
+use super::genes::NeuronType;
+use web_view::{Handle, WVResult};
+use super::utils::clamp;
 
-#[derive(Clone)]
-pub struct Link<'a> {
+#[derive(Clone, Debug)]
+pub struct Link {
     //指向与本link相连接的两个神经细胞的指针
-    _in: &'a Neuron<'a>,
-    out: &'a Neuron<'a>,
+    _in: usize, //neuron_index
+    out: usize, //neuron_index
 
     //连接权重
     weight: f64,
@@ -13,24 +16,24 @@ pub struct Link<'a> {
     recurrent: bool,
 }
 
-impl <'a> Link<'a> {
-    pub fn new(w: f64, _in: &'a Neuron, out: &'a Neuron, rec: bool) -> Link<'a> {
+impl Link {
+    pub fn new(w: f64, in_idx: usize, out_idx: usize, rec: bool) -> Link {
         Link {
             weight: w,
-            _in: _in,
-            out: out,
+            _in: in_idx,
+            out: out_idx,
             recurrent: rec,
         }
     }
 }
 
-#[derive(Clone)]
-pub struct Neuron<'a> {
+#[derive(Debug, Clone)]
+pub struct Neuron {
     //所有链接进入这个神经元
-    links_in: Vec<Link<'a>>,
+    links_in: Vec<Link>,
 
     //和输出的链接
-    links_out: Vec<Link<'a>>,
+    links_out: Vec<Link>,
 
     //权重x输入的和
     sum_activation: f64,
@@ -54,8 +57,8 @@ pub struct Neuron<'a> {
     split_x: f64,
 }
 
-impl <'a> Neuron<'a> {
-    pub fn new(tp: NeuronType, id: i32, y: f64, x: f64, act_response: f64) -> Neuron <'a>{
+impl Neuron {
+    pub fn new(tp: NeuronType, id: i32, y: f64, x: f64, act_response: f64) -> Neuron {
         Neuron {
             neuron_type: tp,
             neuron_id: id,
@@ -71,18 +74,18 @@ impl <'a> Neuron<'a> {
         }
     }
 
-    pub fn links_out(&mut self) -> &mut Vec<Link<'a>> {
+    pub fn links_out(&mut self) -> &mut Vec<Link> {
         &mut self.links_out
     }
 
-    pub fn links_in(&mut self) -> &mut Vec<Link<'a>> {
+    pub fn links_in(&mut self) -> &mut Vec<Link> {
         &mut self.links_in
     }
 }
 
 #[derive(Clone)]
-pub struct NeuralNet<'a> {
-    neurons: Vec<Neuron<'a>>,
+pub struct NeuralNet {
+    neurons: Vec<Neuron>,
     //网络深度
     depth: i32,
 }
@@ -102,14 +105,14 @@ fn sigmoid(netinput: f64, response: f64) -> f64 {
     1.0 / (1.0 + (-netinput / response).exp())
 }
 
-impl <'a> NeuralNet<'a> {
-    pub fn empty() -> NeuralNet<'a> {
+impl NeuralNet {
+    pub fn empty() -> NeuralNet {
         NeuralNet {
             neurons: vec![],
             depth: 0,
         }
     }
-    pub fn new(neurons: Vec<Neuron<'a>>, depth: i32) -> NeuralNet<'a> {
+    pub fn new(neurons: Vec<Neuron>, depth: i32) -> NeuralNet {
         NeuralNet {
             neurons: neurons,
             depth: depth,
@@ -135,7 +138,6 @@ impl <'a> NeuralNet<'a> {
 
             //这是当前神经细胞的一个下标
             let mut neuron = 0;
-            //首先将'input'神经元的输出设置为等于传入函数的值
             while self.neurons[neuron].neuron_type == NeuronType::Input {
                 self.neurons[neuron].output = inputs[neuron];
                 neuron += 1;
@@ -148,24 +150,23 @@ impl <'a> NeuralNet<'a> {
             while neuron < self.neurons.len() {
                 //这个sum用来保存所有输入x权重的总和
                 let mut sum = 0.0;
-                let mut ne = self.neurons[neuron];
                 //通过对进入该神经细胞的所有连接的循环，将该神经细胞各输入值加在一起
-                for lnk in &ne.links_in {
+                for lnk in &self.neurons[neuron].links_in {
                     //得到lnk连接的权重
                     let weight = lnk.weight;
                     //从该链接的进入端神经细胞得到输出
-                    let neuron_output = lnk._in.output;
+                    let neuron_output = self.neurons[lnk._in].output;
                     //将次输出加入总和sum中
                     sum += weight * neuron_output;
                 }
 
                 //现在让总和输入激励函数，并把其结果赋给这一神经细胞的输出
-                let sigmoid_output = sigmoid(sum, ne.activation_response);
-                ne.output = sigmoid_output;
+                let sigmoid_output = sigmoid(sum, self.neurons[neuron].activation_response);
+                self.neurons[neuron].output = sigmoid_output;
                 //println!("neuron={}", neuron);
-                if ne.neuron_type == NeuronType::Output {
+                if self.neurons[neuron].neuron_type == NeuronType::Output {
                     //加入到输出
-                    outputs.push(ne.output);
+                    outputs.push(self.neurons[neuron].output);
                 }
                 //下一个神经细胞
                 neuron += 1;
@@ -182,147 +183,123 @@ impl <'a> NeuralNet<'a> {
     }
 
     //在用户指定的一个窗口中回执网络的图形
-    // pub fn draw_net(&mut self, surface: ui::Surface, left: i32, top: i32, right: i32, bottom: i32) {
-    //     //边框宽度
-    //     let border = 10;
-    //     //最大线厚度
-    //     let max_thickness = 5.0;
-    //     tidy_x_splits(&mut self.neurons);
-    //     //遍历神经元并分配x / y坐标
-    //     let span_x = right - left;
-    //     let span_y = top - bottom - (2 * border);
-    //     for neuron in &mut self.neurons {
-    //         neuron.pos_x = left + (span_x as f64 * neuron.split_x) as i32;
-    //         neuron.pos_y = (top - border) - (span_y as f64 * neuron.split_y) as i32;
-    //         //println!("神经元类型:{:?} split_x:{}, split_y:{}", n.neuron_type, n.split_x, n.split_y);
-    //     }
+    pub fn draw_net(&mut self, handle:&Handle<()>, left: i32, top: i32, right: i32, bottom: i32) -> WVResult {
+        use crate::ctx;
+        ctx::begain_path(handle)?;
+        //边框宽度
+        let border = 0;
+        //最大线厚度
+        let max_thickness = 5.0;
+        tidy_x_splits(&mut self.neurons);
+        //遍历神经元并分配x / y坐标
+        let span_x = right - left;
+        let span_y = top - bottom - (2 * border);
+        for neuron in &mut self.neurons {
+            neuron.pos_x = left + (span_x as f64 * neuron.split_x) as i32;
+            neuron.pos_y = (top - border) - (span_y as f64 * neuron.split_y) as i32;
+            //println!("神经元类型:{:?} split_x:{}, split_y:{}", n.neuron_type, n.split_x, n.split_y);
+        }
 
-    //     //创建一些笔和画笔来绘制
-    //     let grey_pen = ui::solid_pen(1, ui::rgb(200, 200, 200));
-    //     let red_pen = ui::solid_pen(1, ui::rgb(255, 0, 0));
-    //     let green_pen = ui::solid_pen(1, ui::rgb(0, 200, 0));
+        //创建一些笔和画笔来绘制
+        //let color_grey = "rgb(200, 200, 200)";
+        let color_red = "rgb(255, 0, 0)";
+        let color_green = "rgb(0, 200, 0)";
 
-    //     //创建实心画刷
-    //     let red_brush = ui::solid_brush(ui::rgb(255, 0, 0));
+        //神经元的半径
+        let rad_neuron = span_x as f64 / 60.0;
+        let rad_link = rad_neuron as f64 * 1.5;
 
-    //     let old_pen = ui::select_pen(surface, red_pen);
-    //     let old_brush = ui::select_hollow_brush(surface);
+        //现在我们有一个X，Y的pos，我们可以得到绘图的每一个神经元。 首先通过网络中的每个神经元绘制链接
+        for neuron in &self.neurons {
+            //抓取这个神经元位置作为每个连接的起始位置
+            let start_x = neuron.pos_x;
+            let start_y = neuron.pos_y;
 
-    //     //神经元的半径
-    //     let rad_neuron = span_x as f64 / 60.0;
-    //     let rad_link = rad_neuron as f64 * 1.5;
+            //这是一个偏见神经元吗？ 如果是，请将链接绘制成绿色
+            let bias = neuron.neuron_type == NeuronType::Bias;
+            //现在遍历每个传出的链接来获取终点
+            for lnk in &neuron.links_out {
+                let end_x = self.neurons[lnk.out].pos_x;
+                let end_y = self.neurons[lnk.out].pos_y;
 
-    //     //现在我们有一个X，Y的pos，我们可以得到绘图的每一个神经元。 首先通过网络中的每个神经元绘制链接
-    //     for neuron in &self.neurons {
-    //         //抓取这个神经元位置作为每个连接的起始位置
-    //         let start_x = neuron.pos_x;
-    //         let start_y = neuron.pos_y;
+                //如果链接向前画一条直线
+                if !lnk.recurrent && !bias {
+                    let mut thickness = lnk.weight.abs() as f32;
+                    clamp(&mut thickness, 0.0, max_thickness);
+                    ctx::line_width(handle, thickness as i32)?;
+                    if lnk.weight <= 0.0 {
+                        //创建一个用于抑制重量的黄色笔
+                        ctx::stroke_style(handle, "rgb(240, 230, 170)")?;
+                    } else {
+                        //灰色或兴奋
+                        ctx::stroke_style(handle, "rgb(200, 200, 200)")?;
+                    };
 
-    //         //这是一个偏见神经元吗？ 如果是，请将链接绘制成绿色
-    //         let bias = neuron.neuron_type == NeuronType::Bias;
-    //         //现在遍历每个传出的链接来获取终点
-    //         for lnk in &neuron.links_out {
-    //             let end_x = self.neurons[lnk.out].pos_x;
-    //             let end_y = self.neurons[lnk.out].pos_y;
+                    //绘制连接
+                    ctx::move_to(handle, start_x, start_y)?;
+                    ctx::line_to(handle, end_x, end_y)?;
+                } else if !lnk.recurrent && bias {
+                    ctx::stroke_style(handle, color_green)?;
+                    //绘制连接
+                    ctx::move_to(handle, start_x, start_y)?;
+                    ctx::line_to(handle, end_x, end_y)?;
+                } else {
+                    //循环链接绘制为红色
+                    if start_x == end_x && start_y == end_y {
+                        let mut thickness = lnk.weight.abs() as f32;
+                        clamp(&mut thickness, 0.0, max_thickness);
+                        if lnk.weight <= 0.0 {
+                            //蓝色为抑制
+                            ctx::stroke_style(handle, "rgb(0, 0, 255)")?;
+                        } else {
+                            //红色为兴奋
+                            ctx::stroke_style(handle, "rgb(255, 0, 0)")?;
+                        };
 
-    //             //如果链接向前画一条直线
-    //             if !lnk.recurrent && !bias {
-    //                 let mut thickness = lnk.weight.abs() as f32;
-    //                 clamp(&mut thickness, 0.0, max_thickness);
-    //                 let pen = if lnk.weight <= 0.0 {
-    //                     //创建一个用于抑制重量的黄色笔
-    //                     ui::solid_pen(thickness as i32, ui::rgb(240, 230, 170))
-    //                 } else {
-    //                     //灰色或兴奋
-    //                     ui::solid_pen(thickness as i32, ui::rgb(200, 200, 200))
-    //                 };
+                        //我们有一个递归链接到相同的神经元绘制一个椭圆
+                        let x = neuron.pos_x as f64;
+                        let y = neuron.pos_y as f64 - (1.5 * rad_neuron);
+                        ctx::stroke_rect(handle, (x - rad_link) as i32,
+                            (y - rad_link) as i32,
+                            (rad_link) as i32,
+                            (rad_link) as i32)?;
+                    } else {
+                        let mut thickness = lnk.weight.abs() as f32;
+                        clamp(&mut thickness, 0.0, max_thickness);
+                        if lnk.weight <= 0.0 {
+                            //蓝色为抑制
+                            ctx::stroke_style(handle, "rgb(0, 0, 255)")?;
+                        } else {
+                            //红色为兴奋
+                            ctx::stroke_style(handle, "rgb(255, 0, 0)")?;
+                        };
+                        //绘制连接
+                        ctx::move_to(handle, start_x, start_y)?;
+                        ctx::line_to(handle, end_x, end_y)?;
+                    }
+                }
+            }
+        }
 
-    //                 let temp_pen = ui::select_pen(surface, pen);
-    //                 //绘制连接
-    //                 ui::move_to_ex_i32(surface, start_x, start_y);
-    //                 ui::line_to_i32(surface, end_x, end_y);
+        ctx::stroke(handle)?;
 
-    //                 ui::select_pen(surface, temp_pen);
-    //                 ui::delete_pen(pen);
-    //             } else if !lnk.recurrent && bias {
-    //                 ui::select_pen(surface, green_pen);
-    //                 //绘制连接
-    //                 ui::move_to_ex_i32(surface, start_x, start_y);
-    //                 ui::line_to_i32(surface, end_x, end_y);
-    //             } else {
-    //                 //循环链接绘制为红色
-    //                 if start_x == end_x && start_y == end_y {
-    //                     let mut thickness = lnk.weight.abs() as f32;
-    //                     clamp(&mut thickness, 0.0, max_thickness);
-    //                     let pen = if lnk.weight <= 0.0 {
-    //                         //蓝色为抑制
-    //                         ui::solid_pen(thickness as i32, ui::rgb(0, 0, 255))
-    //                     } else {
-    //                         //红色为兴奋
-    //                         ui::solid_pen(thickness as i32, ui::rgb(255, 0, 0))
-    //                     };
-    //                     let temp_pen = ui::select_pen(surface, pen);
-    //                     //我们有一个递归链接到相同的神经元绘制一个椭圆
-    //                     let x = neuron.pos_x as f64;
-    //                     let y = neuron.pos_y as f64 - (1.5 * rad_neuron);
-    //                     ui::ellipse(
-    //                         surface,
-    //                         (x - rad_link) as i32,
-    //                         (y - rad_link) as i32,
-    //                         (x + rad_link) as i32,
-    //                         (y + rad_link) as i32,
-    //                     );
-    //                     ui::select_pen(surface, temp_pen);
-    //                     ui::delete_pen(pen);
-    //                 } else {
-    //                     let mut thickness = lnk.weight.abs() as f32;
-    //                     clamp(&mut thickness, 0.0, max_thickness);
-    //                     let pen = if lnk.weight <= 0.0 {
-    //                         //蓝色为抑制
-    //                         ui::solid_pen(thickness as i32, ui::rgb(0, 0, 255))
-    //                     } else {
-    //                         //红色为兴奋
-    //                         ui::solid_pen(thickness as i32, ui::rgb(255, 0, 0))
-    //                     };
-    //                     let temp_pen = ui::select_pen(surface, pen);
-    //                     //绘制连接
-    //                     ui::move_to_ex_i32(surface, start_x, start_y);
-    //                     ui::line_to_i32(surface, end_x, end_y);
+        //现在绘制神经元及其ID
+        ctx::stroke_style(handle, "black")?;
+        ctx::fill_style(handle, color_red)?;
 
-    //                     ui::select_pen(surface, temp_pen);
-    //                     ui::delete_pen(pen);
-    //                 }
-    //             }
-    //         }
-    //     }
+        for neuron in &self.neurons {
+            let x = neuron.pos_x as f64;
+            let y = neuron.pos_y as f64;
+            ctx::fill_rect(handle,
+                (x - rad_neuron) as i32,
+                (y - rad_neuron) as i32,
+                (rad_neuron) as i32,
+                (rad_neuron) as i32,
+            )?;
+        }
 
-    //     //现在绘制神经元及其ID
-    //     ui::select_brush(surface, red_brush);
-    //     ui::select_black_pen(surface);
-
-    //     for neuron in &self.neurons {
-    //         let x = neuron.pos_x as f64;
-    //         let y = neuron.pos_y as f64;
-    //         ui::ellipse(
-    //             surface,
-    //             (x - rad_neuron) as i32,
-    //             (y - rad_neuron) as i32,
-    //             (x + rad_neuron) as i32,
-    //             (y + rad_neuron) as i32,
-    //         );
-    //     }
-
-    //     //清理
-    //     ui::select_pen(surface, old_pen);
-    //     ui::select_brush(surface, old_brush);
-
-    //     ui::delete_pen(red_pen);
-    //     ui::delete_pen(grey_pen);
-    //     ui::delete_pen(green_pen);
-    //     ui::delete_pen(old_pen);
-    //     ui::delete_brush(red_brush);
-    //     ui::delete_brush(old_brush);
-    // }
+        Ok(())
+    }
 }
 
 //这是一个修复，以防止显示时神经元重叠

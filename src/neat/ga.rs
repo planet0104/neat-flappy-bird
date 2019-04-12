@@ -1,18 +1,16 @@
-use super::genes::*;
-use super::genotype::*;
-use super::innovation::*;
+use super::genes::{Genome, Innovation, LinkGene, NeuronGene};
 use super::params;
 use super::phenotype::NeuralNet;
 use super::species::Species;
 use super::utils::{random_float, random_int, random_usize};
 
 // Desc：用于实现的进化算法类
-pub struct GA<'a> {
-    genomes: Vec<Genome<'a>>,
+pub struct GA {
+    genomes: Vec<Genome>,
     //保留最后一代最佳基因组的记录。 （用于在用户按下“B”键时将显示效果最佳）
-    best_genomes: Vec<Genome<'a>>,
-    species: Vec<Species<'a>>,
-    innovation: Innovations,
+    best_genomes: Vec<Genome>,
+    species: Vec<Species>,
+    innovation: Innovation,
     generation: i32,
     next_genome_id: i32,
     next_species_id: i32,
@@ -46,24 +44,24 @@ impl SplitDepth {
     }
 }
 
-impl <'a> GA<'a> {
+impl GA {
     //这个构造函数从提供的值创建基本基因组，并创建一个“大小”类似（相同拓扑，不同权重）基因组的群体
-    pub fn new(size: i32, inputs: usize, outputs: usize) -> GA<'a> {
+    pub fn new(size: i32, inputs: usize, outputs: usize) -> GA {
         //创建基因组群体
         let mut next_genome_id = 0;
         let mut genomes: Vec<Genome> = vec![];
         for _ in 0..size {
-            genomes.push(Genome::new(next_genome_id, inputs, outputs));
+            genomes.push(Genome::minimal(next_genome_id, inputs, outputs));
             next_genome_id += 1;
         }
         //创建创新列表。 首先创建一个最小的基因组
-        let genome = Genome::new(1, inputs, outputs);
+        let genome = Genome::minimal(1, inputs, outputs);
         //创建创新
-        let innovation = Innovations::new(genome.genes(), genome.neurons());
+        let innovation = Innovation::new(genome.genes(), genome.neurons());
         let mut splits: Vec<SplitDepth> = vec![];
         GA::split(&mut splits, 0.0, 1.0, 0);
 
-        let mut ga = GA {
+        GA {
             pop_size: size,
             generation: 0,
             innovation: innovation,
@@ -79,17 +77,13 @@ impl <'a> GA<'a> {
             splits: splits,
             fitness_scores: vec![0.0; size as usize],
             average_fitness: 0.0,
-        };
-
-        ga.create_phenotypes();
-
-        ga
+        }
     }
 
     pub fn epoch(&mut self) {
-        if self.generation % 500 == 0 {
-            println!("第{}代", self.generation);
-        }
+        // if self.generation % 500 == 0 {
+        //     println!("第{}代", self.generation);
+        // }
         //首先进行检测，以保证有正确数量的适应性分数
         if self.fitness_scores.len() != self.genomes.len() {
             panic!("GA::Epoch(适应分/染色体 数目不等)!");
@@ -111,66 +105,64 @@ impl <'a> GA<'a> {
         self.speciate_and_calculate_spawn_levels();
 
         //这将用来保存基因组的新群体
-        let mut new_pop: Vec<Genome<'a>> = vec![];
+        let mut new_pop: Vec<Genome> = vec![];
         //从每一个物种产生子代。待孵化的自带数目是一个双精度实数，需要将它转换成为一个整数
         let mut num_spawned_so_far = 0;
         //通过对每个物种的循环，选择要配对杂交和突变的子代
-        let mut baby = None;
-        for spc in &self.species{
+        let mut baby = Genome::new();
+        for spc in 0..self.species.len() {
             //从每个物种得到的孵化总数是一个浮点数，需要四舍五入化为整数
             //而这有可能导致孵化总数的溢出。本语句确保不会出现这种情况
             if num_spawned_so_far < self.pop_size {
                 //这是该物种要求孵化下一代的个体总数,round()把浮点数改大或改小化成整数
-                let mut num_to_spawn = spc.num_to_spawn().round() as i32;
+                let mut num_to_spawn = self.species[spc].num_to_spawn().round() as i32;
                 let mut chosen_bestyet = false;
                 while num_to_spawn > 0 {
                     num_to_spawn -= 1;
                     //首先从该物种找出表现最好的基因组，并将它不做任何变异地转移到新的群体
                     //从而为每个物种提供了精英
                     if !chosen_bestyet {
-                        baby = Some(spc.leader().clone());
+                        baby = self.species[spc].leader().clone();
                         chosen_bestyet = true;
                     } else {
                         //如果本物种仅包含一个个体，则只能执行突变操作
-                        if spc.num_members() == 1 {
+                        if self.species[spc].num_members() == 1 {
                             //孵化一个后代
-                            baby = Some(spc.spawn());
+                            baby = self.species[spc].spawn(&self.genomes);
                         } else {
                             //如果大于1，则可以使用杂交操作
                             //孵化1
-                            let g1 = spc.spawn();
+                            let g1 = self.species[spc].spawn(&self.genomes);
                             if random_float() < params::CROSSOVER_RATE {
                                 //孵化2, 保证它不是g1
-                                let mut g2 = spc.spawn();
+                                let mut g2 = self.species[spc].spawn(&self.genomes);
                                 let mut num_attempts = 5;
                                 while g1.id() == g2.id() && num_attempts > 0 {
                                     num_attempts -= 1;
-                                    g2 = spc.spawn();
+                                    g2 = self.species[spc].spawn(&self.genomes);
                                 }
                                 if g1.id() != g2.id() {
-                                    baby = Some(self.crossover(&g1, &g2));
+                                    baby = self.crossover(&g1, &g2);
                                 } else {
-                                    baby = Some(g1);
+                                    baby = g1;
                                 }
-                            }else{
-                                baby = Some(spc.spawn());
                             }
                         }
 
                         self.next_genome_id += 1;
-                        baby.as_mut().unwrap().set_id(self.next_genome_id);
+                        baby.set_id(self.next_genome_id);
 
                         //已存在一个孵化出来的子代，对它进行突变。
                         //首先应考虑加入一个神经细胞的几率
-                        if baby.as_mut().unwrap().num_neurons() < params::MAX_PERMITTED_NEURONS {
-                            baby.as_mut().unwrap().add_neuron(
+                        if baby.num_neurons() < params::MAX_PERMITTED_NEURONS {
+                            baby.add_neuron(
                                 params::CHANCE_ADD_NODE,
                                 &mut self.innovation,
                                 params::NUM_TRYS_TO_FIND_LOOPED_LINK,
                             );
                         }
                         //加入链接的几率
-                        baby.as_mut().unwrap().add_link(
+                        baby.add_link(
                             params::CHANCE_ADD_LINK,
                             params::CHANCE_ADD_RECURRENT_LINK,
                             &mut self.innovation,
@@ -178,22 +170,22 @@ impl <'a> GA<'a> {
                             params::NUM_ADD_LINK_ATTEMPTS,
                         );
                         //对权重实行突变
-                        baby.as_mut().unwrap().mutate_weights(
+                        baby.mutate_weights(
                             params::MUTATION_RATE,
                             params::PROBABILITY_WEIGHT_REPLACED,
                             params::MAX_WEIGHT_PERTURBATION,
                         );
                         //对激励响应实行突变
-                        baby.as_mut().unwrap().mutate_activation_response(
+                        baby.mutate_activation_response(
                             params::ACTIVATION_MUTATION_RATE,
                             params::MAX_ACTIVATION_PERTURBATION,
                         );
                     }
                     //根据创新号对新生基因排序
-                    baby.as_mut().unwrap().sort_genes();
+                    baby.sort_genes();
 
                     //将新基因加入到新群体
-                    new_pop.push(baby.take().unwrap());
+                    new_pop.push(baby.clone());
                     num_spawned_so_far += 1;
                     if num_spawned_so_far == self.pop_size {
                         num_to_spawn = 0;
@@ -215,7 +207,7 @@ impl <'a> GA<'a> {
         }
 
         //用新群体替代当前群体
-        self.genomes = new_pop.drain(..).map(|a| a).collect();
+        self.genomes = new_pop;
         //创建新的表现型
         for gen in 0..self.genomes.len() {
             //计算最大网络深度
@@ -227,7 +219,7 @@ impl <'a> GA<'a> {
     }
 
     //遍历人口的所有成员，并创建他们的表型。 返回一个包含指向新表型的指针的向量
-    fn create_phenotypes(&mut self) {
+    pub fn create_phenotypes(&mut self) {
         for i in 0..self.pop_size as usize {
             //计算最大网络深度
             let depth = self.calculate_net_depth(&self.genomes[i]);
@@ -235,7 +227,7 @@ impl <'a> GA<'a> {
         }
     }
 
-    pub fn get_phenotype(&mut self, index: usize) -> Option<&NeuralNet> {
+    pub fn get_phenotype(&mut self, index: usize) -> &mut NeuralNet {
         self.genomes[index].phenotype()
     }
 
@@ -245,15 +237,14 @@ impl <'a> GA<'a> {
 
     //这个函数简单地遍历每个物种，并调用每个物种的AdjustFitness
     fn adjust_species_fitnesses(&mut self) {
-        for i in 0..self.species.len() {
-            Species::adjust_fitnesses(&mut self, i);
+        for sp in &mut self.species {
+            sp.adjust_fitnesses(&mut self.genomes);
         }
     }
 
     //在查找表中搜索基因组中每个节点的dSplitY值，并根据该图返回网络的深度
-    fn calculate_net_depth(&self, gen: &'a Genome<'a>) -> i32 {
+    fn calculate_net_depth(&self, gen: &Genome) -> i32 {
         let mut max_so_far = 0;
-        // let gen = gen.borrow();
         for nd in 0..gen.num_neurons() {
             for sp in &self.splits {
                 if gen.split_y(nd) == sp.val && sp.depth > max_so_far {
@@ -265,7 +256,7 @@ impl <'a> GA<'a> {
     }
 
     /** 锦标赛选择 */
-    fn tournament_selection(&self, num_comparisons: i32) -> Genome<'a> {
+    fn tournament_selection(&self, num_comparisons: i32) -> Genome {
         let mut best_fitness_so_far = 0.0;
         let mut chosen_one = 0;
         //从人群中选择 num_comparisons 成员进行随机测试，达到目前为止最好的发现
@@ -280,7 +271,7 @@ impl <'a> GA<'a> {
         self.genomes[chosen_one].clone()
     }
 
-    pub fn crossover(&mut self, mum: &'a Genome<'a>, dad: &'a Genome<'a>) -> Genome<'a> {
+    pub fn crossover(&mut self, mum: &Genome, dad: &Genome) -> Genome {
         //首先计算用来产生disjoint/excess基因的基因组。这是适应性最好的基因组。
         //如果他们有相同的适应分，则选用较短者(因为希望网络保持尽可能小)
         let best = if mum.fitness() == dad.fitness() {
@@ -338,7 +329,7 @@ impl <'a> GA<'a> {
                 cur_mum = iter_mum.next();
             }
             //如果妈妈的创新标识小于爸爸的创新数标识
-            else if cur_mum.unwrap().innovation_id < cur_dad.unwrap().innovation_id {
+            else if cur_mum.unwrap().innovation_id() < cur_dad.unwrap().innovation_id() {
                 //如果妈妈是最适应者，则加入妈妈基因
                 if best == ParentType::Mum {
                     selected_gene = cur_mum;
@@ -347,7 +338,7 @@ impl <'a> GA<'a> {
                 cur_mum = iter_mum.next();
             }
             //如果爸爸的创新号小于妈妈的创新号
-            else if cur_dad.unwrap().innovation_id < cur_mum.unwrap().innovation_id {
+            else if cur_dad.unwrap().innovation_id() < cur_mum.unwrap().innovation_id() {
                 //如果爸爸是最适应者，则加入爸爸基因
                 if best == ParentType::Dad {
                     selected_gene = cur_dad;
@@ -356,7 +347,7 @@ impl <'a> GA<'a> {
                 cur_dad = iter_dad.next();
             }
             //如果爸爸妈妈的创新号一样
-            else if cur_dad.unwrap().innovation_id == cur_mum.unwrap().innovation_id {
+            else if cur_dad.unwrap().innovation_id() == cur_mum.unwrap().innovation_id() {
                 //爸爸、妈妈二者都取出基因
                 if random_float() < 0.5 {
                     selected_gene = cur_mum;
@@ -372,15 +363,15 @@ impl <'a> GA<'a> {
             if baby_genes.len() == 0 {
                 baby_genes.push((*selected_gene).clone());
             } else {
-                if baby_genes[baby_genes.len() - 1].innovation_id != selected_gene.innovation_id
+                if baby_genes[baby_genes.len() - 1].innovation_id() != selected_gene.innovation_id()
                 {
                     baby_genes.push((*selected_gene).clone());
                 }
             }
             //检查neurons是否已经有所选基因selected_gene所涉及(关联)的神经细胞?
             //如果没有，就需要(在neurons中)加入这些神经细胞
-            GA::add_neuron_id(selected_gene.from_neuron, &mut neurons);
-            GA::add_neuron_id(selected_gene.to_neuron, &mut neurons);
+            GA::add_neuron_id(selected_gene.from_neuron(), &mut neurons);
+            GA::add_neuron_id(selected_gene.to_neuron(), &mut neurons);
         } //结束while循环
           //创建所要的全部神经细胞，首先将它们排序
           //neurons.sort();// 正序
@@ -389,7 +380,13 @@ impl <'a> GA<'a> {
             baby_neurons.push(self.innovation.create_neuron_from_id(neuron_id));
         }
         //最后创建基因
-        let baby_genome = Genome::from_data(self.next_genome_id, baby_neurons, baby_genes, mum.num_inputs(), mum.num_outputs());
+        let baby_genome = Genome::from(
+            self.next_genome_id,
+            baby_neurons,
+            baby_genes,
+            mum.num_inputs(),
+            mum.num_outputs(),
+        );
         self.next_genome_id += 1;
 
         baby_genome
@@ -482,12 +479,12 @@ impl <'a> GA<'a> {
                 }
             }
             if spc_selected != -1 {
-                // self.species[spc_selected as usize].add_member(&self.genomes[gen]);
+                self.species[spc_selected as usize].add_member(&self.genomes[gen], gen);
                 self.genomes[gen].set_species(self.species[spc_selected as usize].id());
             } else {
                 //我们没有找到兼容的物种，所以让我们创建一个新的物种
-                // self.species
-                //     .push(Species::new(&self.genomes[gen], self.next_species_id));
+                self.species
+                    .push(Species::new(&self.genomes[gen], gen, self.next_species_id));
                 self.next_species_id += 1;
             }
         }
@@ -510,7 +507,7 @@ impl <'a> GA<'a> {
 
         //迭代所有的物种，并计算每个物种应该产生多少个后代
         for spc in &mut self.species {
-            spc.calculate_spawn_amount();
+            spc.calculate_spawn_amount(&self.genomes);
         }
     }
 
@@ -532,15 +529,6 @@ impl <'a> GA<'a> {
         self.genomes.len() as i32
     }
 
-    pub fn get_by_id(&mut self, id:i32) ->Option<&mut Genome<'a>>{
-        for i in 0..self.genomes.len(){
-            if self.genomes[i].id() == id{
-                return Some(&mut self.genomes[i]);
-            }
-        }
-        None
-    }
-
     pub fn num_best_genomes(&self) -> i32 {
         self.best_genomes.len() as i32
     }
@@ -553,12 +541,8 @@ impl <'a> GA<'a> {
         self.average_fitness
     }
 
-    pub fn size(&self) -> usize{
-        self.pop_size as usize
-    }
-
-    pub fn species(&mut self) ->&mut Vec<Species<'a>>{
-        &mut self.species
+    pub fn pop_size(&self) -> i32 {
+        self.pop_size
     }
 
     // pub fn render_species_info(
