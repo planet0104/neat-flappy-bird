@@ -1,6 +1,8 @@
 # neat-flappy-bird
 
-## NEAT算法(拓扑扩张的神经演化)玩像素鸟
+## NEAT算法玩像素鸟
+
+> Neuro Evolution Of Augmenting Topologies(拓扑扩张的神经演化)
 
 NEAT代码来自《游戏编程中的人工智能技术》一书
 
