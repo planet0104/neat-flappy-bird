@@ -10,8 +10,10 @@ NEAT代码来自《游戏编程中的人工智能技术》一书
 
 在线演示：[https://planet0104.github.io/neat-flappy-bird/static/](https://planet0104.github.io/neat-flappy-bird/static/)
 
-运行：
+运行桌面版：
 >cargo run
+
+运行Web版：
 >cargo web start --release
 
 截图：
