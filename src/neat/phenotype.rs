@@ -1,7 +1,12 @@
 // Desc：创建神经网络所需的定义。
 use super::genes::NeuronType;
-use web_view::{Handle, WVResult};
 use super::utils::clamp;
+use quicksilver::{
+    geom::{Circle, Line},
+    graphics::{Background::Col, Color},
+    lifecycle::Window,
+    Result,
+};
 
 #[derive(Clone, Debug)]
 pub struct Link {
@@ -183,13 +188,18 @@ impl NeuralNet {
     }
 
     //在用户指定的一个窗口中回执网络的图形
-    pub fn draw_net(&mut self, handle:&Handle<()>, left: i32, top: i32, right: i32, bottom: i32) -> WVResult {
-        use crate::ctx;
-        ctx::begain_path(handle)?;
+    pub fn draw_net(
+        &mut self,
+        window: &mut Window,
+        left: i32,
+        top: i32,
+        right: i32,
+        bottom: i32,
+    ) -> Result<()> {
         //边框宽度
         let border = 0;
         //最大线厚度
-        let max_thickness = 5.0;
+        let max_thickness = 6.0;
         tidy_x_splits(&mut self.neurons);
         //遍历神经元并分配x / y坐标
         let span_x = right - left;
@@ -197,16 +207,13 @@ impl NeuralNet {
         for neuron in &mut self.neurons {
             neuron.pos_x = left + (span_x as f64 * neuron.split_x) as i32;
             neuron.pos_y = (top - border) - (span_y as f64 * neuron.split_y) as i32;
-            //println!("神经元类型:{:?} split_x:{}, split_y:{}", n.neuron_type, n.split_x, n.split_y);
         }
 
         //创建一些笔和画笔来绘制
-        //let color_grey = "rgb(200, 200, 200)";
-        let color_red = "rgb(255, 0, 0)";
-        let color_green = "rgb(0, 200, 0)";
+        let color_green = Color::from_rgba(0, 200, 0, 1.0);
 
         //神经元的半径
-        let rad_neuron = span_x as f64 / 60.0;
+        let rad_neuron = span_x as f64 / 40.0; //span_x as f64 / 60.0
         let rad_link = rad_neuron as f64 * 1.5;
 
         //现在我们有一个X，Y的pos，我们可以得到绘图的每一个神经元。 首先通过网络中的每个神经元绘制链接
@@ -226,76 +233,73 @@ impl NeuralNet {
                 if !lnk.recurrent && !bias {
                     let mut thickness = lnk.weight.abs() as f32;
                     clamp(&mut thickness, 0.0, max_thickness);
-                    ctx::line_width(handle, thickness as i32)?;
-                    if lnk.weight <= 0.0 {
+                    let color = if lnk.weight <= 0.0 {
                         //创建一个用于抑制重量的黄色笔
-                        ctx::stroke_style(handle, "rgb(240, 230, 170)")?;
+                        Color::from_rgba(240, 230, 170, 1.0)
                     } else {
                         //灰色或兴奋
-                        ctx::stroke_style(handle, "rgb(200, 200, 200)")?;
+                        Color::from_rgba(200, 200, 200, 1.0)
                     };
 
                     //绘制连接
-                    ctx::move_to(handle, start_x, start_y)?;
-                    ctx::line_to(handle, end_x, end_y)?;
+                    window.draw(
+                        &Line::new((start_x, start_y), (end_x, end_y)).with_thickness(thickness),
+                        Col(color),
+                    );
                 } else if !lnk.recurrent && bias {
-                    ctx::stroke_style(handle, color_green)?;
                     //绘制连接
-                    ctx::move_to(handle, start_x, start_y)?;
-                    ctx::line_to(handle, end_x, end_y)?;
+                    window.draw(
+                        &Line::new((start_x, start_y), (end_x, end_y)).with_thickness(2.0),
+                        Col(color_green),
+                    );
                 } else {
                     //循环链接绘制为红色
                     if start_x == end_x && start_y == end_y {
                         let mut thickness = lnk.weight.abs() as f32;
                         clamp(&mut thickness, 0.0, max_thickness);
-                        if lnk.weight <= 0.0 {
+                        let color = if lnk.weight <= 0.0 {
                             //蓝色为抑制
-                            ctx::stroke_style(handle, "rgb(0, 0, 255)")?;
+                            Color::from_rgba(0, 0, 255, 1.0)
                         } else {
                             //红色为兴奋
-                            ctx::stroke_style(handle, "rgb(255, 0, 0)")?;
+                            Color::from_rgba(255, 0, 0, 1.0)
                         };
 
                         //我们有一个递归链接到相同的神经元绘制一个椭圆
                         let x = neuron.pos_x as f64;
                         let y = neuron.pos_y as f64 - (1.5 * rad_neuron);
-                        ctx::stroke_rect(handle, (x - rad_link) as i32,
-                            (y - rad_link) as i32,
-                            (rad_link) as i32,
-                            (rad_link) as i32)?;
+                        window.draw(
+                            &Circle::new((x as i32, y as i32), rad_link as i32),
+                            Col(color),
+                        );
                     } else {
                         let mut thickness = lnk.weight.abs() as f32;
                         clamp(&mut thickness, 0.0, max_thickness);
-                        if lnk.weight <= 0.0 {
+                        let color = if lnk.weight <= 0.0 {
                             //蓝色为抑制
-                            ctx::stroke_style(handle, "rgb(0, 0, 255)")?;
+                            Color::from_rgba(0, 0, 255, 1.0)
                         } else {
                             //红色为兴奋
-                            ctx::stroke_style(handle, "rgb(255, 0, 0)")?;
+                            Color::from_rgba(255, 0, 0, 1.0)
                         };
                         //绘制连接
-                        ctx::move_to(handle, start_x, start_y)?;
-                        ctx::line_to(handle, end_x, end_y)?;
+                        window.draw(
+                            &Line::new((start_x, start_y), (end_x, end_y)).with_thickness(2.0),
+                            Col(color),
+                        );
                     }
                 }
             }
         }
 
-        ctx::stroke(handle)?;
-
         //现在绘制神经元及其ID
-        ctx::stroke_style(handle, "black")?;
-        ctx::fill_style(handle, color_red)?;
-
         for neuron in &self.neurons {
             let x = neuron.pos_x as f64;
             let y = neuron.pos_y as f64;
-            ctx::fill_rect(handle,
-                (x - rad_neuron) as i32,
-                (y - rad_neuron) as i32,
-                (rad_neuron) as i32,
-                (rad_neuron) as i32,
-            )?;
+            window.draw(
+                &Circle::new((x as i32, y as i32), rad_neuron as i32),
+                Col(Color::RED),
+            );
         }
 
         Ok(())

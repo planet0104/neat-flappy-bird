@@ -19,7 +19,7 @@ pub struct GA {
     tot_fit_adj: f64,
     av_fit_adj: f64,
     //指向适合基因组的基因组
-    fittest_genome: i32,
+    _fittest_genome: i32,
     best_ever_fitness: f64,
     average_fitness: f64,
     //这是预先计算的分割深度。 它们用于计算渲染的神经元x/y位置，并用于计算当“表现型”工作在“快照”模式时网络的刷新深度。
@@ -67,7 +67,7 @@ impl GA {
             innovation: innovation,
             next_genome_id: next_genome_id,
             next_species_id: 0,
-            fittest_genome: 0,
+            _fittest_genome: 0,
             best_ever_fitness: 0.0,
             tot_fit_adj: 0.0,
             av_fit_adj: 0.0,
@@ -209,11 +209,12 @@ impl GA {
         //用新群体替代当前群体
         self.genomes = new_pop;
         //创建新的表现型
-        for gen in 0..self.genomes.len() {
-            //计算最大网络深度
-            let depth = self.calculate_net_depth(&self.genomes[gen]);
-            self.genomes[gen].create_phenotype(depth);
-        }
+        // for gen in 0..self.genomes.len() {
+        //     //计算最大网络深度
+        //     let depth = self.calculate_net_depth(&self.genomes[gen]);
+        //     self.genomes[gen].create_phenotype(depth);
+        // }
+        self.create_phenotypes();
         //增加代数计数器
         self.generation += 1;
     }

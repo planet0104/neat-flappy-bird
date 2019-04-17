@@ -19,7 +19,7 @@ pub struct LinkGene {
 }
 
 impl LinkGene {
-    pub fn temp() -> LinkGene {
+    pub fn _temp() -> LinkGene {
         LinkGene {
             from_neuron: 0,
             to_neuron: 0,
@@ -335,7 +335,7 @@ impl Innovation {
         self.innovs[inv as usize].neuron_id
     }
 
-    pub fn flush(&mut self) {
+    pub fn _flush(&mut self) {
         self.innovs.clear();
     }
 }
@@ -965,7 +965,7 @@ impl Genome {
         self.species = species;
     }
 
-    pub fn get_species(&self) -> i32 {
+    pub fn _get_species(&self) -> i32 {
         self.species
     }
 

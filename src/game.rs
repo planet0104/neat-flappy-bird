@@ -1,16 +1,16 @@
-use crate::ctx;
-use std::f64::consts::PI;
-use web_view::{Handle, WVResult};
+use std::f32::consts::PI;
 pub static GAME_WIDTH: i32 = 500;
 pub static GAME_HEIGHT: i32 = 512;
-pub static IMG_BACKGROUND: &str = "img-background";
 pub static IMG_BACKGROUND_WIDTH: f64 = 288.;
-pub static IMG_BIRD: &str = "img-bird";
-pub static IMG_PIPEBOTTOM: &str = "img-pipebottom";
-pub static IMG_PIPETOP: &str = "img-pipetop";
 pub static IMG_PIPETOP_HEIGHT: f64 = 512.;
 use crate::neat::ga::GA;
 use crate::neat::phenotype::RunType;
+use quicksilver::{
+    geom::{Shape, Transform},
+    graphics::{Background::Img, Color, Font, FontStyle, Image},
+    lifecycle::{Asset, Window},
+    Result,
+};
 
 pub static POP_SIZE: i32 = 60;
 
@@ -74,6 +74,7 @@ struct Pipe {
     width: f64,
     height: f64,
     speed: f64,
+    pass: bool,
 }
 impl Pipe {
     pub fn update(&mut self) {
@@ -86,6 +87,7 @@ impl Pipe {
 impl Default for Pipe {
     fn default() -> Self {
         Pipe {
+            pass: false,
             x: 0.0,
             y: 0.0,
             width: 50.0,
@@ -96,9 +98,16 @@ impl Default for Pipe {
 }
 
 pub struct Game {
+    font: Asset<Font>,
+    font_style: FontStyle,
+    img_bird: Asset<Image>,
+    img_background: Asset<Image>,
+    img_pipebottom: Asset<Image>,
+    img_pipetop: Asset<Image>,
     pipes: Vec<Pipe>,
     birds: Vec<Bird>,
     score: i32,
+    frame_count: i32,
     width: f64,
     height: f64,
     spawn_interval: i32,
@@ -109,14 +118,22 @@ pub struct Game {
     background_speed: f64,
     backgroundx: f64,
     max_score: i32,
-    handle: Option<Handle<()>>,
+    status_texture: Option<(StatusInfo, Image)>,
+    pub key_ctrl_pressed: bool,
 }
 impl Default for Game {
     fn default() -> Self {
         Game {
+            font: Asset::new(Font::load("FZFSJW.TTF")),
+            font_style: FontStyle::new(18.0, Color::WHITE),
+            img_bird: Asset::new(Image::load("bird.png")),
+            img_background: Asset::new(Image::load("background.png")),
+            img_pipebottom: Asset::new(Image::load("pipebottom.png")),
+            img_pipetop: Asset::new(Image::load("pipetop.png")),
             pipes: vec![],
             birds: vec![],
             score: 0,
+            frame_count: 0,
             width: GAME_WIDTH as f64,
             height: GAME_HEIGHT as f64,
             spawn_interval: 90,
@@ -127,14 +144,23 @@ impl Default for Game {
             background_speed: 0.5,
             backgroundx: 0.0,
             max_score: 0,
-            handle: None,
+            status_texture: None,
+            key_ctrl_pressed: false,
         }
     }
+}
+
+struct StatusInfo {
+    score: i32,
+    max_score: i32,
+    generation: i32,
+    alives: usize,
 }
 
 impl Game {
     pub fn start(&mut self) {
         self.interval = 0;
+        self.frame_count = 0;
         self.score = 0;
         self.pipes = vec![];
         self.birds = vec![];
@@ -146,28 +172,42 @@ impl Game {
         }
         self.generation += 1;
         self.alives = self.birds.len();
-        if let Some(handle) = self.handle.as_ref() {
-            handle
-                .dispatch(move |webview| webview.eval(&format!("startAnimationFrame();")))
-                .unwrap();
-        }
+    }
+
+    fn update_status_texture(&mut self) -> Result<()> {
+        let texture = &mut self.status_texture;
+        let font_style = &self.font_style;
+
+        let score = self.score;
+        let max_score = self.max_score;
+        let generation = self.generation;
+        let alives = self.alives;
+
+        self.font.execute(|font| {
+            *texture = Some((StatusInfo{
+            score,
+            max_score,
+            generation,
+            alives
+        }, font.render(&format!("Score : {}\nMax Score : {}\nGeneration : {}\nAlive : {} / {}\nCtrl+1~5：x1~x5\nCtrl+M：MAX\nF5：RESET",
+            score,
+            max_score,
+            generation,
+            alives,
+            POP_SIZE
+            ), font_style).unwrap()));
+            Ok(())
+        })
     }
 
     pub fn reset(&mut self) {
         self.ga = GA::new(POP_SIZE, 2, 1);
         self.max_score = 0;
+        self.generation = 0;
         self.start();
     }
 
-    pub fn set_handle(&mut self, handle: Handle<()>) {
-        self.handle = Some(handle);
-    }
-
-    pub fn has_handle(&self) -> bool {
-        self.handle.is_some()
-    }
-
-    pub fn update(&mut self) {
+    pub fn update(&mut self, _window: &mut Window) -> Result<()> {
         self.backgroundx += self.background_speed;
         let mut next_holl = 0.0;
         if self.birds.len() > 0 {
@@ -186,7 +226,6 @@ impl Game {
                 //网络处理
                 let phenotype = self.ga.get_phenotype(i);
                 let output = phenotype.update(&inputs, RunType::Active);
-                // println!("output={:?}", output);
                 if output[0] > 0.5 {
                     self.birds[i].flap();
                 }
@@ -195,9 +234,8 @@ impl Game {
                 if self.birds[i].is_dead(self.height, &self.pipes) {
                     self.birds[i].alive = false;
                     self.alives -= 1;
-                    //console.log(self.alives);
                     //设置网络得分
-                    self.ga.fitness_scores()[i] = self.score as f64;
+                    self.ga.fitness_scores()[i] = self.frame_count as f64;
                     if self.is_it_end() {
                         self.start();
                     }
@@ -205,8 +243,17 @@ impl Game {
             }
         }
 
-        for pipe in &mut self.pipes {
+        for pipei in 0..self.pipes.len() {
+            let pipe = &mut self.pipes[pipei];
             pipe.update();
+            if !pipe.pass && pipe.x + pipe.width / 2.0 < 80.0 {
+                pipe.pass = true;
+                //加分
+                self.score += 1;
+                if self.score > self.max_score {
+                    self.max_score = self.score;
+                }
+            }
         }
         self.pipes.retain(|pipe| !pipe.is_out());
 
@@ -235,93 +282,90 @@ impl Game {
             self.interval = 0;
         }
 
-        self.score += 1;
-        self.max_score = std::cmp::max(self.score, self.max_score);
+        self.frame_count += 1;
+        Ok(())
     }
 
-    pub fn draw(&mut self) -> WVResult {
-        if self.handle.is_none() {
-            return Ok(());
-        }
-        let handle = self.handle.as_ref().unwrap();
-        ctx::clear_rect(handle, 0, 0, self.width as i32, self.height as i32)?;
+    pub fn draw(&mut self, window: &mut Window) -> Result<()> {
+        let backgroundx = self.backgroundx;
         for i in 0..((self.width / IMG_BACKGROUND_WIDTH).ceil() + 1.0) as usize {
-            ctx::draw_image(
-                handle,
-                IMG_BACKGROUND,
-                (i as f64 * IMG_BACKGROUND_WIDTH
-                    - (self.backgroundx % IMG_BACKGROUND_WIDTH).floor()) as i32,
-                0,
-                None,
-            )?;
+            self.img_background.execute(|image| {
+                window.draw(
+                    &image.area().translate((
+                        (i as f64 * IMG_BACKGROUND_WIDTH
+                            - (backgroundx % IMG_BACKGROUND_WIDTH).floor())
+                            as i32,
+                        0,
+                    )),
+                    Img(&image),
+                );
+                Ok(())
+            })?;
         }
 
         for i in 0..self.pipes.len() {
+            let pipe_x = self.pipes[i].x as i32;
             if i % 2 == 0 {
-                ctx::draw_image(
-                    handle,
-                    IMG_PIPETOP,
-                    self.pipes[i].x as i32,
-                    (self.pipes[i].y + self.pipes[i].height - IMG_PIPETOP_HEIGHT) as i32,
-                    Some((self.pipes[i].width as i32, IMG_PIPETOP_HEIGHT as i32)),
-                )?;
+                let pipe_y = (self.pipes[i].y + self.pipes[i].height - IMG_PIPETOP_HEIGHT) as i32;
+                self.img_pipetop.execute(|image| {
+                    window.draw(&image.area().translate((pipe_x, pipe_y)), Img(&image));
+                    Ok(())
+                })?;
             } else {
-                ctx::draw_image(
-                    handle,
-                    IMG_PIPEBOTTOM,
-                    self.pipes[i].x as i32,
-                    self.pipes[i].y as i32,
-                    Some((self.pipes[i].width as i32, IMG_PIPETOP_HEIGHT as i32)),
-                )?;
+                let pipe_y = self.pipes[i].y as i32;
+                self.img_pipebottom.execute(|image| {
+                    window.draw(&image.area().translate((pipe_x, pipe_y)), Img(&image));
+                    Ok(())
+                })?;
             }
         }
 
-        ctx::fill_style(handle, "#FFC600")?;
-        ctx::stroke_style(handle, "#CE9E00")?;
         for i in 0..self.birds.len() {
             if self.birds[i].alive {
-                ctx::save(handle)?;
-                ctx::translate(
-                    handle,
+                let t = (
                     (self.birds[i].x + self.birds[i].width / 2.0) as i32,
                     (self.birds[i].y + self.birds[i].height / 2.0) as i32,
-                )?;
-                ctx::rotate(handle, PI / 2.0 * self.birds[i].gravity / 20.0)?;
-                ctx::draw_image(
-                    handle,
-                    IMG_BIRD,
-                    (-self.birds[i].width / 2.0) as i32,
-                    (-self.birds[i].height / 2.0) as i32,
-                    Some((self.birds[i].width as i32, self.birds[i].height as i32)),
-                )?;
-                ctx::restore(handle)?;
+                );
+                let r = (PI / 2.0 * self.birds[i].gravity as f32 / 20.0) * 90.0;
+                self.img_bird.execute(|image| {
+                    window.draw_ex(
+                        &image.area().with_center((0, 0)),
+                        Img(&image),
+                        Transform::translate(t) * Transform::rotate(r),
+                        0,
+                    );
+                    Ok(())
+                })?;
             }
         }
 
-        ctx::fill_style(handle, "white")?;
-        ctx::font(handle, "20px Oswald, sans-serif")?;
-        ctx::fill_text(handle, &format!("Score : {}", self.score), 10, 25)?;
-        ctx::fill_text(handle, &format!("Max Score : {}", self.max_score), 10, 50)?;
-        ctx::fill_text(handle, &format!("Generation : {}", self.generation), 10, 75)?;
-        //生存数量
-        ctx::fill_text(
-            handle,
-            &format!("Alive : {} / {}", self.alives, POP_SIZE),
-            10,
-            100,
-        )?;
+        //需要在draw函数中渲染文字
+        if let Some((status, _)) = &self.status_texture {
+            if status.score != self.score
+                || status.max_score != self.max_score
+                || status.alives != self.alives
+                || status.generation != self.generation
+            {
+                self.update_status_texture()?;
+            }
+        } else {
+            self.update_status_texture()?;
+        }
 
+        if let Some((_, image)) = &mut self.status_texture {
+            window.draw(&image.area().translate((10, 15)), Img(&image));
+        }
+
+        window.flush()?;
         //绘制最好的网络
         let brains: Vec<usize> = self.ga.get_best_phenotypes_from_last_generation();
         if brains.len() > 0 {
-            ctx::fill_style(handle, "rgba(255, 255, 255, 0.2)")?;
-            ctx::fill_rect(handle, GAME_WIDTH-120, GAME_HEIGHT-120, 120, 120)?;
             self.ga.get_phenotype(brains[0]).draw_net(
-                &handle,
-                GAME_WIDTH-120,
-                GAME_HEIGHT-100,
+                window,
+                GAME_WIDTH - 120,
+                GAME_HEIGHT - 100,
                 GAME_WIDTH,
-                GAME_HEIGHT-10,
+                GAME_HEIGHT - 10,
             )?;
         }
 

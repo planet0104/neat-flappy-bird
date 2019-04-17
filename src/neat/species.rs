@@ -109,7 +109,7 @@ impl Species {
     pub fn id(&self) -> i32 {
         self.species_id
     }
-    pub fn species_leader_fitness(&self) -> f64 {
+    pub fn _species_leader_fitness(&self) -> f64 {
         self.leader.fitness()
     }
     pub fn best_fitness(&self) -> f64 {
