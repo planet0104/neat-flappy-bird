@@ -1,16 +1,10 @@
-use std::f32::consts::PI;
-pub static GAME_WIDTH: i32 = 500;
-pub static GAME_HEIGHT: i32 = 512;
-pub static IMG_BACKGROUND_WIDTH: f64 = 288.;
-pub static IMG_PIPETOP_HEIGHT: f64 = 512.;
-use crate::neat::ga::GA;
-use crate::neat::phenotype::RunType;
-use quicksilver::{
-    geom::{Shape, Transform},
-    graphics::{Background::Img, Color, Font, FontStyle, Image},
-    lifecycle::{Asset, Window},
-    Result,
-};
+use std::f64::consts::PI;
+pub static GAME_WIDTH: f64 = 500.;
+pub static GAME_HEIGHT: f64 = 512.;
+use neat::ga::GA;
+use neat::phenotype::RunType;
+use mengine::*;
+use std::rc::Rc;
 
 pub static POP_SIZE: i32 = 60;
 
@@ -98,12 +92,11 @@ impl Default for Pipe {
 }
 
 pub struct Game {
-    font: Asset<Font>,
-    font_style: FontStyle,
-    img_bird: Asset<Image>,
-    img_background: Asset<Image>,
-    img_pipebottom: Asset<Image>,
-    img_pipetop: Asset<Image>,
+    background: engine::ScrollingBackground,
+    img_bird: Rc<Image>,
+    img_pipebottom: Rc<Image>,
+    img_pipetop: Rc<Image>,
+    best_net: Option<Rc<Image>>,
     pipes: Vec<Pipe>,
     birds: Vec<Bird>,
     score: i32,
@@ -115,21 +108,21 @@ pub struct Game {
     ga: GA,
     alives: usize,
     generation: i32,
-    background_speed: f64,
-    backgroundx: f64,
     max_score: i32,
-    status_texture: Option<(StatusInfo, Image)>,
     pub key_ctrl_pressed: bool,
 }
-impl Default for Game {
-    fn default() -> Self {
+
+impl Game {
+    pub fn new(loader:&mut Window) -> Game{
+        let bglayer = engine::BackgroundLayer::new(loader.load_image("background.png").unwrap(),
+                Rect::new(0.0, 0.0, GAME_WIDTH, GAME_HEIGHT), 0.5, engine::ScrollDir::Left);
+        let mut background = engine::ScrollingBackground::new();
+        background.add_layer(bglayer);
         Game {
-            font: Asset::new(Font::load("FZFSJW.TTF")),
-            font_style: FontStyle::new(18.0, Color::WHITE),
-            img_bird: Asset::new(Image::load("bird.png")),
-            img_background: Asset::new(Image::load("background.png")),
-            img_pipebottom: Asset::new(Image::load("pipebottom.png")),
-            img_pipetop: Asset::new(Image::load("pipetop.png")),
+            img_bird: loader.load_image("bird.png").unwrap(),
+            background,
+            img_pipebottom: loader.load_image("pipebottom.png").unwrap(),
+            img_pipetop: loader.load_image("pipetop.png").unwrap(),
             pipes: vec![],
             birds: vec![],
             score: 0,
@@ -141,24 +134,13 @@ impl Default for Game {
             ga: GA::new(POP_SIZE, 2, 1),
             alives: 0,
             generation: 0,
-            background_speed: 0.5,
-            backgroundx: 0.0,
             max_score: 0,
-            status_texture: None,
             key_ctrl_pressed: false,
+            best_net: None,
         }
     }
-}
 
-struct StatusInfo {
-    score: i32,
-    max_score: i32,
-    generation: i32,
-    alives: usize,
-}
-
-impl Game {
-    pub fn start(&mut self) {
+    pub fn start(&mut self, window: &mut Window) {
         self.interval = 0;
         self.frame_count = 0;
         self.score = 0;
@@ -170,45 +152,26 @@ impl Game {
         for _ in 0..self.ga.pop_size() {
             self.birds.push(Bird::default());
         }
+
+        //绘制最好的网络
+        let brains: Vec<usize> = self.ga.get_best_phenotypes_from_last_generation();
+        if brains.len() > 0 {
+            let net_img = self.ga.get_phenotype(brains[0]).draw_net(120, 100, 10);
+            self.best_net = Some(window.load_image_alpha(&net_img).unwrap());
+        }
         self.generation += 1;
         self.alives = self.birds.len();
     }
 
-    fn update_status_texture(&mut self) -> Result<()> {
-        let texture = &mut self.status_texture;
-        let font_style = &self.font_style;
-
-        let score = self.score;
-        let max_score = self.max_score;
-        let generation = self.generation;
-        let alives = self.alives;
-
-        self.font.execute(|font| {
-            *texture = Some((StatusInfo{
-            score,
-            max_score,
-            generation,
-            alives
-        }, font.render(&format!("Score : {}\nMax Score : {}\nGeneration : {}\nAlive : {} / {}\nCtrl+1~5：x1~x5\nCtrl+M：MAX\nF5：RESET",
-            score,
-            max_score,
-            generation,
-            alives,
-            POP_SIZE
-            ), font_style).unwrap()));
-            Ok(())
-        })
-    }
-
-    pub fn reset(&mut self) {
+    pub fn reset(&mut self, window: &mut Window) {
         self.ga = GA::new(POP_SIZE, 2, 1);
         self.max_score = 0;
         self.generation = 0;
-        self.start();
+        self.start(window);
     }
 
-    pub fn update(&mut self, _window: &mut Window) -> Result<()> {
-        self.backgroundx += self.background_speed;
+    pub fn update(&mut self, window: &mut Window){
+        self.background.update();
         let mut next_holl = 0.0;
         if self.birds.len() > 0 {
             for i in (0..self.pipes.len()).step_by(2) {
@@ -237,7 +200,7 @@ impl Game {
                     //设置网络得分
                     self.ga.fitness_scores()[i] = self.frame_count as f64;
                     if self.is_it_end() {
-                        self.start();
+                        self.start(window);
                     }
                 }
             }
@@ -261,7 +224,7 @@ impl Game {
             let delta_bord = 50.0;
             let pipe_holl = 120.0;
             let holl_position =
-                (rand::random::<f64>() * (self.height - delta_bord * 2.0 - pipe_holl)).round()
+                (random() * (self.height - delta_bord * 2.0 - pipe_holl)).round()
                     + delta_bord;
             self.pipes.push(Pipe {
                 x: self.width,
@@ -283,90 +246,41 @@ impl Game {
         }
 
         self.frame_count += 1;
-        Ok(())
     }
 
-    pub fn draw(&mut self, window: &mut Window) -> Result<()> {
-        let backgroundx = self.backgroundx;
-        for i in 0..((self.width / IMG_BACKGROUND_WIDTH).ceil() + 1.0) as usize {
-            self.img_background.execute(|image| {
-                window.draw(
-                    &image.area().translate((
-                        (i as f64 * IMG_BACKGROUND_WIDTH
-                            - (backgroundx % IMG_BACKGROUND_WIDTH).floor())
-                            as i32,
-                        0,
-                    )),
-                    Img(&image),
-                );
-                Ok(())
-            })?;
-        }
+    pub fn draw(&mut self, g: &mut Graphics) -> Result<(), String> {
+        self.background.draw(g)?;
 
         for i in 0..self.pipes.len() {
-            let pipe_x = self.pipes[i].x as i32;
+            let pipe_x = self.pipes[i].x;
             if i % 2 == 0 {
-                let pipe_y = (self.pipes[i].y + self.pipes[i].height - IMG_PIPETOP_HEIGHT) as i32;
-                self.img_pipetop.execute(|image| {
-                    window.draw(&image.area().translate((pipe_x, pipe_y)), Img(&image));
-                    Ok(())
-                })?;
+                let pipe_y =  self.pipes[i].y + self.pipes[i].height - self.img_pipetop.height();
+                g.draw_image_at(None, self.img_pipetop.as_ref(), pipe_x, pipe_y)?;
             } else {
-                let pipe_y = self.pipes[i].y as i32;
-                self.img_pipebottom.execute(|image| {
-                    window.draw(&image.area().translate((pipe_x, pipe_y)), Img(&image));
-                    Ok(())
-                })?;
-            }
+                let pipe_y =  self.pipes[i].y;
+                g.draw_image_at(None, self.img_pipebottom.as_ref(), pipe_x, pipe_y)?;
+            };
         }
 
         for i in 0..self.birds.len() {
             if self.birds[i].alive {
-                let t = (
-                    (self.birds[i].x + self.birds[i].width / 2.0) as i32,
-                    (self.birds[i].y + self.birds[i].height / 2.0) as i32,
-                );
-                let r = (PI / 2.0 * self.birds[i].gravity as f32 / 20.0) * 90.0;
-                self.img_bird.execute(|image| {
-                    window.draw_ex(
-                        &image.area().with_center((0, 0)),
-                        Img(&image),
-                        Transform::translate(t) * Transform::rotate(r),
-                        0,
-                    );
-                    Ok(())
-                })?;
+                let r = PI / 2.0 * self.birds[i].gravity / 20.0;
+                g.draw_image_at(Some(Transform{rotate: r, translate:(self.birds[i].x, self.birds[i].y)}), self.img_bird.as_ref(),  - self.birds[i].width / 2.0, - self.birds[i].height / 2.0)?;
             }
         }
 
-        //需要在draw函数中渲染文字
-        if let Some((status, _)) = &self.status_texture {
-            if status.score != self.score
-                || status.max_score != self.max_score
-                || status.alives != self.alives
-                || status.generation != self.generation
-            {
-                self.update_status_texture()?;
-            }
-        } else {
-            self.update_status_texture()?;
-        }
+        let text_color = &[255, 255, 255, 255];
+        g.draw_text(None, &format!("Score : {}", self.score), 10.0, 20.0, text_color, 18)?;
+        g.draw_text(None, &format!("Max Score : {}", self.max_score), 10.0, 40.0, text_color, 18)?;
+        g.draw_text(None, &format!("Generation : {}", self.generation), 10.0, 60.0, text_color, 18)?;
+        g.draw_text(None, &format!("Alive : {}/{}", self.alives, POP_SIZE), 10.0, 80.0, text_color, 18)?;
+        g.draw_text(None, "Ctrl+1~5：x1~x5", 10.0, 100.0, text_color, 18)?;
+        g.draw_text(None, "Ctrl+M：MAX", 10.0, 120.0, text_color, 18)?;
+        g.draw_text(None, "F5：RESET", 10.0, 140.0, text_color, 18)?;
 
-        if let Some((_, image)) = &mut self.status_texture {
-            window.draw(&image.area().translate((10, 15)), Img(&image));
-        }
-
-        window.flush()?;
         //绘制最好的网络
-        let brains: Vec<usize> = self.ga.get_best_phenotypes_from_last_generation();
-        if brains.len() > 0 {
-            self.ga.get_phenotype(brains[0]).draw_net(
-                window,
-                GAME_WIDTH - 120,
-                GAME_HEIGHT - 100,
-                GAME_WIDTH,
-                GAME_HEIGHT - 10,
-            )?;
+        if let Some(best_net) = &self.best_net{
+            g.draw_image_at(None, best_net.as_ref(), GAME_WIDTH-best_net.width(), GAME_HEIGHT-best_net.height())?;
         }
 
         Ok(())

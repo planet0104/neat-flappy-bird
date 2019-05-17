@@ -1,83 +1,87 @@
 // #![windows_subsystem = "windows"]
 mod game;
-mod neat;
 use game::Game;
-
-use quicksilver::{
-    geom::Vector,
-    graphics::Color,
-    input::{ButtonState, Key},
-    lifecycle::{run, Event, Settings, State, Window},
-    Result,
-};
+use mengine::*;
+use game::{GAME_WIDTH, GAME_HEIGHT};
 
 impl State for game::Game {
-    fn new() -> Result<Game> {
-        let mut game = Game::default();
-        game.start();
-        Ok(game)
+    fn new(window: &mut Window) -> Self {
+        let mut game = Game::new(window);
+        game.start(window);
+        game
     }
 
-    fn update(&mut self, window: &mut Window) -> Result<()> {
-        self.update(window)
+    fn update(&mut self, window: &mut Window){
+        self.update(window);
     }
 
-    fn event(&mut self, event: &Event, window: &mut Window) -> Result<()> {
+    fn event(&mut self, event: Event, window: &mut Window){
         match event {
-            &Event::Key(Key::F5, ButtonState::Released) => self.reset(),
-            &Event::Key(Key::LControl, ButtonState::Released)
-            | &Event::Key(Key::RControl, ButtonState::Released) => self.key_ctrl_pressed = false,
-            &Event::Key(Key::RControl, ButtonState::Pressed)
-            | &Event::Key(Key::LControl, ButtonState::Pressed) => self.key_ctrl_pressed = true,
-            &Event::Key(Key::Key1, ButtonState::Pressed) => {
-                if self.key_ctrl_pressed {
-                    window.set_update_rate(1000. / 60.);
-                }
+            Event::KeyUp(key) => {
+                match key.to_lowercase().as_str(){
+                    "f5" => self.reset(window),
+                    "control" => self.key_ctrl_pressed = false,
+                    _ => ()
+                };
             }
-            &Event::Key(Key::Key2, ButtonState::Pressed) => {
-                if self.key_ctrl_pressed {
-                    window.set_update_rate(1000. / 60. / 2.);
-                }
-            }
-            &Event::Key(Key::Key3, ButtonState::Pressed) => {
-                if self.key_ctrl_pressed {
-                    window.set_update_rate(1000. / 60. / 3.);
-                }
-            }
-            &Event::Key(Key::Key4, ButtonState::Pressed) => {
-                if self.key_ctrl_pressed {
-                    window.set_update_rate(1000. / 60. / 4.);
-                }
-            }
-            &Event::Key(Key::Key5, ButtonState::Pressed) => {
-                if self.key_ctrl_pressed {
-                    window.set_update_rate(1000. / 60. / 5.);
-                }
-            }
-            &Event::Key(Key::M, ButtonState::Pressed) => {
-                if self.key_ctrl_pressed {
-                    window.set_update_rate(1.);
-                }
+            Event::KeyDown(key) => {
+                match key.to_lowercase().as_str(){
+                    "f5" => self.reset(window),
+                    "control" => self.key_ctrl_pressed = true,
+                    "1" => {
+                        if self.key_ctrl_pressed {
+                            window.set_update_rate(60);
+                        }
+                    }
+                    "2" => {
+                        if self.key_ctrl_pressed {
+                            window.set_update_rate(120);
+                        }
+                    }
+                    "3" => {
+                        if self.key_ctrl_pressed {
+                            window.set_update_rate(180);
+                        }
+                    }
+                    "4" => {
+                        if self.key_ctrl_pressed {
+                            window.set_update_rate(240);
+                        }
+                    }
+                    "5" => {
+                        if self.key_ctrl_pressed {
+                            window.set_update_rate(300);
+                        }
+                    }
+                    "m" => {
+                        if self.key_ctrl_pressed {
+                            window.set_update_rate(100000);
+                        }
+                    }
+                    _ => ()
+                };
             }
             _ => (),
         };
-        Ok(())
     }
 
-    fn draw(&mut self, window: &mut Window) -> Result<()> {
-        window.clear(Color::WHITE)?;
-        self.draw(window)?;
+    fn draw(&mut self, g: &mut Graphics) -> Result<(), String> {
+        g.clear_rect(&[255, 255, 255, 255], 0.0, 0.0, GAME_WIDTH, GAME_HEIGHT);
+        self.draw(g)?;
         Ok(())
     }
 }
 
 fn main() {
-    //update_rate: 1000. / 60.,
     run::<Game>(
         "NEAT Flappy Bird",
-        Vector::new(game::GAME_WIDTH, game::GAME_HEIGHT),
+        GAME_WIDTH,
+        GAME_HEIGHT,
         Settings {
+            font_file: Some("wqy-micro-hei.ttf"),
             icon_path: Some("favicon.ico"),
+            auto_scale: true,
+            window_size: Some((100., 200.)),
             ..Default::default()
         },
     );
