@@ -4,7 +4,6 @@ pub static GAME_HEIGHT: f64 = 512.;
 use neat::ga::GA;
 use neat::phenotype::RunType;
 use mengine::*;
-use std::rc::Rc;
 
 pub static POP_SIZE: i32 = 60;
 
@@ -93,10 +92,10 @@ impl Default for Pipe {
 
 pub struct Game {
     background: engine::ScrollingBackground,
-    img_bird: Rc<Image>,
-    img_pipebottom: Rc<Image>,
-    img_pipetop: Rc<Image>,
-    best_net: Option<Rc<Image>>,
+    img_bird: Image,
+    img_pipebottom: Image,
+    img_pipetop: Image,
+    best_net: Option<Image>,
     pipes: Vec<Pipe>,
     birds: Vec<Bird>,
     score: i32,
@@ -255,17 +254,17 @@ impl Game {
             let pipe_x = self.pipes[i].x;
             if i % 2 == 0 {
                 let pipe_y =  self.pipes[i].y + self.pipes[i].height - self.img_pipetop.height();
-                g.draw_image_at(None, self.img_pipetop.as_ref(), pipe_x, pipe_y)?;
+                g.draw_image_at(None, &self.img_pipetop, pipe_x, pipe_y)?;
             } else {
                 let pipe_y =  self.pipes[i].y;
-                g.draw_image_at(None, self.img_pipebottom.as_ref(), pipe_x, pipe_y)?;
+                g.draw_image_at(None, &self.img_pipebottom, pipe_x, pipe_y)?;
             };
         }
 
         for i in 0..self.birds.len() {
             if self.birds[i].alive {
                 let r = PI / 2.0 * self.birds[i].gravity / 20.0;
-                g.draw_image_at(Some(Transform{rotate: r, translate:(self.birds[i].x, self.birds[i].y)}), self.img_bird.as_ref(),  - self.birds[i].width / 2.0, - self.birds[i].height / 2.0)?;
+                g.draw_image_at(Some(Transform{rotate: r, translate:(self.birds[i].x, self.birds[i].y)}), &self.img_bird,  - self.birds[i].width / 2.0, - self.birds[i].height / 2.0)?;
             }
         }
 
@@ -280,7 +279,7 @@ impl Game {
 
         //绘制最好的网络
         if let Some(best_net) = &self.best_net{
-            g.draw_image_at(None, best_net.as_ref(), GAME_WIDTH-best_net.width(), GAME_HEIGHT-best_net.height())?;
+            g.draw_image_at(None, &best_net, GAME_WIDTH-best_net.width(), GAME_HEIGHT-best_net.height())?;
         }
 
         Ok(())

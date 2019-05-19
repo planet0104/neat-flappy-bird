@@ -16,6 +16,7 @@ impl State for game::Game {
     }
 
     fn event(&mut self, event: Event, window: &mut Window){
+        // log(format!("{:?}", event));
         match event {
             Event::KeyUp(key) => {
                 match key.to_lowercase().as_str(){
@@ -55,7 +56,7 @@ impl State for game::Game {
                     }
                     "m" => {
                         if self.key_ctrl_pressed {
-                            window.set_update_rate(100000);
+                            window.set_update_rate(1000);
                         }
                     }
                     _ => ()
@@ -80,8 +81,9 @@ fn main() {
         Settings {
             font_file: Some("wqy-micro-hei.ttf"),
             icon_path: Some("favicon.ico"),
-            auto_scale: true,
-            window_size: Some((100., 200.)),
+            // auto_scale: true,
+            // window_size: Some((100., 200.)),
+            show_ups_fps: true,
             ..Default::default()
         },
     );

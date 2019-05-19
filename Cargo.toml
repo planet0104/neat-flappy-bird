@@ -5,7 +5,7 @@ authors = ["planet0104 <planet0104@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-mengine = { git = "https://github.com/planet0104/mengine" }
-# mengine = { path = "../mengine" }
+# mengine = { git = "https://github.com/planet0104/mengine" }
+mengine = { path = "../mengine" }
 # neat = { path = "../neat" }
 neat = { git = "https://github.com/planet0104/neat" }
