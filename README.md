@@ -8,7 +8,7 @@ NEAT代码来自《游戏编程中的人工智能技术》一书
 
 游戏代码参考：[FlappyLearning](https://github.com/xviniette/FlappyLearning)
 
-在线演示：[https://planet0104.github.io/neat-flappy-bird/static/](https://planet0104.github.io/neat-flappy-bird/static/)
+在线演示：[https://planet0104.github.io/neat-flappy-bird/deploy/index.html](https://planet0104.github.io/neat-flappy-bird/deploy/index.html)
 
 运行桌面版：
 >cargo run --release
