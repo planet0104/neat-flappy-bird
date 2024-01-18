@@ -126,11 +126,12 @@ pub struct Game {
     alives: usize,
     generation: i32,
     max_score: i32,
+    draw_everything: bool,
     pub key_ctrl_pressed: bool,
 }
 
 impl Game {
-    pub fn new(window: &mut Window) -> Game {
+    pub fn new(window: &mut dyn Window) -> Game {
         window.load_assets(RESOURCES.to_vec());
         Game {
             resources: HashMap::new(),
@@ -148,11 +149,12 @@ impl Game {
             generation: 0,
             max_score: 0,
             key_ctrl_pressed: false,
+            draw_everything: true,
             best_net: None,
         }
     }
 
-    pub fn start(&mut self, window: &mut Window) {
+    pub fn start(&mut self, window: &mut dyn Window) {
         self.interval = 0;
         self.frame_count = 0;
         self.score = 0;
@@ -175,14 +177,14 @@ impl Game {
         self.alives = self.birds.len();
     }
 
-    pub fn reset(&mut self, window: &mut Window) {
+    pub fn reset(&mut self, window: &mut dyn Window) {
         self.ga = GA::new(POP_SIZE, 2, 1);
         self.max_score = 0;
         self.generation = 0;
         self.start(window);
     }
 
-    pub fn update(&mut self, window: &mut Window) {
+    pub fn update(&mut self, window: &mut dyn Window) {
         let stage = self.stage.as_mut().unwrap();
 
         stage.background.update();
@@ -261,7 +263,7 @@ impl Game {
         self.frame_count += 1;
     }
 
-    pub fn draw(&mut self, g: &mut Graphics) {
+    pub fn draw(&mut self, g: &mut dyn Graphics) {
         let stage = self.stage.as_mut().unwrap();
 
         stage.background.draw(g);
@@ -291,47 +293,50 @@ impl Game {
             }
         }
 
-        let text_color = &[255, 255, 255, 255];
-        g.draw_text(
-            &format!("Score : {}", self.score),
-            10.0,
-            20.0,
-            text_color,
-            18,
-        );
-        g.draw_text(
-            &format!("Max Score : {}", self.max_score),
-            10.0,
-            40.0,
-            text_color,
-            18,
-        );
-        g.draw_text(
-            &format!("Generation : {}", self.generation),
-            10.0,
-            60.0,
-            text_color,
-            18,
-        );
-        g.draw_text(
-            &format!("Alive : {}/{}", self.alives, POP_SIZE),
-            10.0,
-            80.0,
-            text_color,
-            18,
-        );
-        g.draw_text("Ctrl+1~5：x1~x5", 10.0, 100.0, text_color, 18);
-        g.draw_text("Ctrl+M：MAX", 10.0, 120.0, text_color, 18);
-        g.draw_text("F5：RESET", 10.0, 140.0, text_color, 18);
-
-        //绘制最好的网络
-        if let Some(best_net) = &self.best_net {
-            g.draw_image_at(
-                None,
-                &best_net,
-                GAME_WIDTH - best_net.width(),
-                GAME_HEIGHT - best_net.height(),
+        if self.draw_everything{
+            let text_color = &[255, 255, 255, 255];
+            g.draw_text(
+                &format!("Score : {}", self.score),
+                10.0,
+                20.0,
+                text_color,
+                18,
             );
+            g.draw_text(
+                &format!("Max Score : {}", self.max_score),
+                10.0,
+                40.0,
+                text_color,
+                18,
+            );
+            g.draw_text(
+                &format!("Generation : {}", self.generation),
+                10.0,
+                60.0,
+                text_color,
+                18,
+            );
+            g.draw_text(
+                &format!("Alive : {}/{}", self.alives, POP_SIZE),
+                10.0,
+                80.0,
+                text_color,
+                18,
+            );
+            g.draw_text("Ctrl+1~5：x1~x5", 10.0, 100.0, text_color, 18);
+            g.draw_text("Ctrl+M：MAX", 10.0, 120.0, text_color, 18);
+            g.draw_text("F5：RESET", 10.0, 140.0, text_color, 18);
+            g.draw_text("F4：SHOW", 10.0, 160.0, text_color, 18);
+
+            //绘制最好的网络
+            if let Some(best_net) = &self.best_net {
+                g.draw_image_at(
+                    None,
+                    &best_net,
+                    GAME_WIDTH - best_net.width(),
+                    GAME_HEIGHT - best_net.height(),
+                );
+            }
         }
     }
 
@@ -346,20 +351,20 @@ impl Game {
 }
 
 impl State for Game {
-    fn new(window: &mut Window) -> Self {
+    fn new(window: &mut dyn Window) -> Self {
         let mut game = Game::new(window);
         game.start(window);
         game
     }
 
-    fn update(&mut self, window: &mut Window) {
+    fn update(&mut self, window: &mut dyn Window) {
         if self.stage.is_none() {
             return;
         }
         self.update(window);
     }
 
-    fn event(&mut self, event: Event, window: &mut Window) {
+    fn event(&mut self, event: Event, window: &mut dyn Window) {
         if self.stage.is_none() {
             return;
         }
@@ -368,6 +373,9 @@ impl State for Game {
             Event::KeyUp(key) => {
                 match key.to_lowercase().as_str() {
                     "f5" => self.reset(window),
+                    "f4" => {
+                        self.draw_everything = !self.draw_everything;
+                    }
                     "control" => self.key_ctrl_pressed = false,
                     _ => (),
                 };
@@ -418,7 +426,7 @@ impl State for Game {
         path: &str,
         _: AssetsType,
         assets: std::io::Result<Assets>,
-        _window: &mut Window,
+        _window: &mut dyn Window,
     ) {
         if path == "netimg" {
             if let Ok(assets) = assets {
@@ -470,7 +478,7 @@ impl State for Game {
         }
     }
 
-    fn draw(&mut self, g: &mut Graphics, _window: &mut Window) {
+    fn draw(&mut self, g: &mut dyn Graphics, _window: &mut dyn Window) {
         g.fill_rect(&[255, 255, 255, 255], 0.0, 0.0, GAME_WIDTH, GAME_HEIGHT);
         if self.stage.is_none() {
             return;

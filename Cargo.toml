@@ -2,7 +2,7 @@
 name = "neat-flappy-bird"
 version = "1.0.3"
 authors = ["planet0104 <planet0104@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 mengine = { git = "https://github.com/planet0104/mengine", tag="0.6.6" }
